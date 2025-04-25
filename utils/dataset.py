@@ -11,18 +11,13 @@ class ImageCSVDataset(Dataset):
     ImageCSVDataset is a custom dataset class for loading images and their corresponding labels from a CSV file.
     It is designed for datasets structured as follows:
 
-    dataset_root/
-    ├── train/                # or 'test', 'val', etc.
-    │   ├── data/             # contains image files (e.g., .jpg, .png)
-    │   │   ├── img1.jpg
-    │   │   ├── img2.jpg
-    │   │   └── ...
-    │   └── labels/
-    │       └── labels.csv    # CSV file with 'filename,label' format
-    └── test/
-        ├── data/
-        └── labels/
-            └── labels.csv
+    data_dir/
+    ├── data/             # contains image files (e.g., .jpg, .png)
+    │   ├── img1.jpg
+    │   ├── img2.jpg
+    │   └── ...
+    └── labels/
+        └── labels.csv    # CSV file with 'filename,label' format
 
     Example of labels.csv:
     ----------------------
@@ -43,6 +38,7 @@ class ImageCSVDataset(Dataset):
         self.data_dir = data_dir
         self.img_dir = Path(data_dir) / "data" # Assuming images are in a subfolder named 'data'
         self.labels = pd.read_csv(Path(data_dir) / "labels" / "labels.csv") # Assuming labels are in a subfolder named 'labels'
+        self.delete_missing_images_from_labels()
         self.transform = transform
         if self.transform is None:
             self.transform = transforms.ToTensor()
@@ -53,7 +49,15 @@ class ImageCSVDataset(Dataset):
     def __getitem__(self, index: int):
         row = self.labels.iloc[index]
         img_name = row["filename"]
+        img_stem = img_name.split(".")[0] 
         label = int(row["label"]) 
+        
+        # Check for the image with the same stem but maybe different extension
+        possible_files = list(self.img_dir.glob(f"{img_stem}.*")) 
+        if len(possible_files) == 0:
+            raise FileNotFoundError(f"No image found for {img_name} in {self.img_dir}.")
+        
+        img_name = possible_files[0]        
         img_path = self.img_dir / img_name
         
         img = Image.open(img_path).convert("RGB")
@@ -61,6 +65,21 @@ class ImageCSVDataset(Dataset):
 
         return img, label
 
+    def delete_missing_images_from_labels(self):
+        """
+        Deletes rows from the labels DataFrame where the corresponding image file does not exist.
+        """
+        missing_files = []
+        for index, row in self.labels.iterrows():
+            img_name = row["filename"]
+            img_stem = img_name.split(".")[0] 
+            possible_files = list(self.img_dir.glob(f"{img_stem}.*")) 
+            if len(possible_files) == 0:
+                missing_files.append(index)
+
+        self.labels.drop(missing_files, inplace=True)
+        self.labels.reset_index(drop=True, inplace=True)
+        print(f"Deleted {len(missing_files)} missing images from labels.")
 
 def get_dataset(data_foldername: str, transform:transforms) -> ImageCSVDataset:
     """
@@ -116,7 +135,7 @@ def split_dataset(dataset, save_dir: Path, train_ratio=0.8, seed=42):
 
 if __name__ == "__main__":
     # Example usage
-    data_foldername = "train"
+    data_foldername = "MGS_data"
     dataset = get_dataset(data_foldername, transform=None)
     from torch.utils.data import DataLoader
     print(f"Number of samples in {data_foldername} dataset: {len(dataset)}")

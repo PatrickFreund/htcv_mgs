@@ -1,0 +1,8 @@
+plotly
+kaleido
+torch
+torchvision
+torchaudio
+pandas
+ipykernel
+optuna
