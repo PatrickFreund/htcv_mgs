@@ -6,3 +6,5 @@ kaleido
 pandas
 ipykernel
 optuna
+scikit-learn
+requests

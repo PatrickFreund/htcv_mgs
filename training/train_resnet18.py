@@ -11,7 +11,6 @@ from torchvision import transforms
 from torchvision.models import resnet18
 from torch.utils.data import DataLoader
 
-
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.dataset import get_dataset
 
@@ -19,11 +18,10 @@ torch.backends.cudnn.benchmark = True
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-
 def train(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, optimizer: optim.Optimizer, scheduler = None):
     model.train()
     total_loss = 0
-
+    
     for inputs, targets in dataloader:
         inputs, targets = inputs.to(device), targets.to(device)
 
@@ -78,11 +76,12 @@ def init_weights(model, init_type):
 
 def objective(trial):
     config = {
-        "batch_size": trial.suggest_int("batch_size", 16, 128, step=16),
+        "batch_size": 64,
+        # "batch_size": trial.suggest_int("batch_size", 16, 128, step=16),
         "learning_rate": trial.suggest_float("learning_rate", 1e-5, 1e-1, log=True),
         "weight_decay": trial.suggest_float("weight_decay", 1e-5, 1e-2, log=True),
         "optimizer": trial.suggest_categorical("optimizer", ["Adam", "AdamW", "SGD"]),
-        "init_type": trial.suggest_categorical("init_type", ["he", "xavier", "normal", "uniform"]),
+        "init_type": trial.suggest_categorical("init_type", ["he", "normal"]),
         "scheduler": trial.suggest_categorical("scheduler", ["none", "step_lr", "cosine_annealing"]),
     }
 
@@ -156,12 +155,10 @@ if __name__ == "__main__":
     print(torch.cuda.current_device())  
     print(torch.cuda.get_device_name(0))  
     
-    
-    
     pruner = optuna.pruners.SuccessiveHalvingPruner(min_resource=3, reduction_factor=3, min_early_stopping_rate=1)
-    sampler = optuna.samplers.TPESampler(seed=42)
+    sampler = optuna.samplers.TPESampler(seed=101)
     study = optuna.create_study(direction="maximize", sampler=sampler, pruner=pruner)
-    study.optimize(objective, n_trials=1)
+    study.optimize(objective, n_trials=50)
     
     print("Best trial:")
     trial = study.best_trial
@@ -189,11 +186,14 @@ if __name__ == "__main__":
     df_trials.to_csv("optuna_trials1.csv", index=False)
     
     
-    fig = vis.plot_optimization_history(study)
-    fig.write_image("optuna_optimization_history.png") 
+    import pickle
+    with open("optuna_study.pkl", "wb") as f:
+        pickle.dump(study, f)
+    # fig = vis.plot_optimization_history(study)
+    # fig.write_image("optuna_optimization_history.png") 
     
-    fig = vis.plot_param_importances(study)
-    fig.write_image("optuna_param_importance.png")
+    # fig = vis.plot_param_importances(study)
+    # fig.write_image("optuna_param_importance.png")
     
-    fig = vis.plot_parallel_coordinate(study)
-    fig.write_image("optuna_parallel_coordinate.png")
+    # fig = vis.plot_parallel_coordinate(study)
+    # fig.write_image("optuna_parallel_coordinate.png")

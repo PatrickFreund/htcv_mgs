@@ -6,3 +6,5 @@ torchaudio
 pandas
 ipykernel
 optuna
+scikit-learn
+requests
