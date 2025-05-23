@@ -9,7 +9,7 @@ import yaml
 import torch
 import torch.utils.data as data
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.model_selection import ParameterGrid
+from sklearn.model_selection import ParameterGrid, KFold
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.model import get_model
@@ -121,9 +121,13 @@ class GridSearch:
         self,
         train_func: Callable,
         val_func: Callable,
-        train_loader: data.DataLoader,
-        val_loader: data.DataLoader,
-        save_best_model_path: Union[str, Path, None] = None
+        dataset: data.Dataset,
+        # train_loader: data.DataLoader,
+        # val_loader: data.DataLoader,
+        batch_size: int,
+        k_folds: int,
+        save_best_model_path: Union[str, Path, None] = None,
+        shuffle: bool = True
     ) -> Tuple[float, Dict]:
         """Function performs exhaustiv gridsearch of all possible combinations of the given 
         hyperparameter grid.
@@ -142,36 +146,61 @@ class GridSearch:
         best_loss: float = float("inf")
         best_model_state = None
 
+        kfold = KFold(n_splits=k_folds, shuffle=shuffle, random_state=self.config["General"]["seed"])
+
         for i, params in enumerate(self.param_grid):
             print(f"{i}. Testing Parameters: {params}")
 
-            model = self.model_fn(**self.model_args)  # new model for each kombination
-            model.to(self.device)
-            criterion = self._get_loss_fn(params["loss_fn"])
-            optimizer = self._get_optimizer(params, model)
-            scheduler = self._get_lr_scheduler(params, optimizer)
+            fold_losses = []
+            fold_metrics = []
+            all_fold_train_losses = []
 
-            epochs = params["epochs"]
-            train_losses = train_func(model, train_loader, criterion, optimizer, scheduler, epochs)
-            val_loss, val_metrics = val_func(model, val_loader, criterion)
+            for fold_idx, (train_idx, val_idx) in enumerate(kfold.split(dataset)):
+                print(f" Fold {fold_idx + 1}/{k_folds}")
+
+                train_subset = data.Subset(dataset, train_idx)
+                val_subset = data.Subset(dataset, val_idx)
+
+                train_loader = data.DataLoader(train_subset, batch_size=batch_size, shuffle=True)
+                val_loader = data.DataLoader(val_subset, batch_size=batch_size, shuffle=False)
+
+                model = self.model_fn(**self.model_args)  # new model for each kombination
+                model.to(self.device)
+                criterion = self._get_loss_fn(params["loss_fn"])
+                optimizer = self._get_optimizer(params, model)
+                scheduler = self._get_lr_scheduler(params, optimizer)
+
+                epochs = params["epochs"]
+                train_losses = train_func(model, train_loader, criterion, optimizer, scheduler, epochs)
+                val_loss, val_metrics = val_func(model, val_loader, criterion)
+
+                fold_losses.append(val_loss)
+                fold_metrics.append(val_metrics)
+                all_fold_train_losses.append(train_losses)
+
+            avg_val_loss = sum(fold_losses) / k_folds
+            avg_val_metrics = {key: sum(m[key] for m in fold_metrics) / k_folds for key in fold_metrics[0]}
+
+            print(f" Average val loss: {avg_val_loss: 4f}")
 
             # Logging
             model_name = self.model_args.get("name", model.__class__.__name__)
             self.writer.add_text(f"Run_{i}/Model_Name", model_name)
             self.writer.add_text("Seed", self.config["General"]["seed"])
 
-            for epoch_idx, train_loss in enumerate(train_losses):
-                self.writer.add_scalar(f"Run_{i}/Train_Loss", train_loss, epoch_idx)
+            for fold_idx, train_losses in enumerate(all_fold_train_losses):
+                for epoch_idx, train_loss in enumerate(train_losses):
+                    self.writer.add_scalar(f"Run_{i}/Fold_{fold_idx}/Train_Loss", train_loss, epoch_idx)
             
-            self.writer.add_scalar(f"Run_{i}/Val_Loss", val_loss, len(train_losses) - 1)
-            for metric_name, value in val_metrics.items():
-                self.writer.add_scalar(f"Run_{i}/{metric_name}", value, len(train_losses) - 1)
+            self.writer.add_scalar(f"Run_{i}/Avg_Val_Loss", avg_val_loss, epochs - 1)
+            for avg_metric_name, value in avg_val_metrics.items():
+                self.writer.add_scalar(f"Run_{i}/{avg_metric_name}", value, epochs - 1)
             
-            metrics_with_loss = {"val_loss": val_loss, **val_metrics}
+            metrics_with_loss = {"val_loss": avg_val_loss, **avg_val_metrics}
             self.writer.add_hparams(params, metrics_with_loss)
 
-            if val_loss < best_loss:
-                best_loss = val_loss
+            if avg_val_loss < best_loss:
+                best_loss = avg_val_loss
                 best_params = params
                 best_model_state = model.state_dict()
 

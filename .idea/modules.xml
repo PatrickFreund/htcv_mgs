@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/../Aerial_Loc/.idea/Aerial_Loc.iml" filepath="$PROJECT_DIR$/../Aerial_Loc/.idea/Aerial_Loc.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/htcv_mgs.iml" filepath="$PROJECT_DIR$/.idea/htcv_mgs.iml" />
+    </modules>
+  </component>
+</project>
