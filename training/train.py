@@ -7,7 +7,7 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from utils.dataset import get_dataset, split_dataset
+from datamodule.dataset import get_dataset, split_dataset
 from utils.model import get_model
 from utils.train_utils import train_one_epoch, validate_model
 from utils.utility import get_unique_path, save_args_to_file

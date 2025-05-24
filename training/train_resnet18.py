@@ -12,7 +12,7 @@ from torchvision.models import resnet18
 from torch.utils.data import DataLoader
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from utils.dataset import get_dataset
+from datamodule.dataset import get_dataset
 
 torch.backends.cudnn.benchmark = True
 device = "cuda" if torch.cuda.is_available() else "cpu"
