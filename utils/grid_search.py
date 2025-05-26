@@ -152,7 +152,7 @@ class GridSearch:
             scheduler = self._get_lr_scheduler(params, optimizer)
 
             epochs = params["epochs"]
-            train_losses = train_func(model, train_loader, criterion, optimizer, scheduler, epochs)
+            train_losses, train_metrics = train_func(model, train_loader, criterion, optimizer, scheduler, epochs)
             val_loss, val_metrics = val_func(model, val_loader, criterion)
 
             # Logging
@@ -160,9 +160,11 @@ class GridSearch:
             self.writer.add_text(f"Run_{i}/Model_Name", model_name)
             self.writer.add_text("Seed", self.config["General"]["seed"])
 
-            for epoch_idx, train_loss in enumerate(train_losses):
+            for epoch_idx, (train_loss, train_metric_dict) in enumerate(zip(train_losses, train_metrics)):
                 self.writer.add_scalar(f"Run_{i}/Train_Loss", train_loss, epoch_idx)
-            
+                for metric_name, value in train_metric_dict.items():
+                    self.writer.add_scalar(f"Run_{i}/Train_{metric_name}", value, epoch_idx)
+
             self.writer.add_scalar(f"Run_{i}/Val_Loss", val_loss, len(train_losses) - 1)
             for metric_name, value in val_metrics.items():
                 self.writer.add_scalar(f"Run_{i}/{metric_name}", value, len(train_losses) - 1)
