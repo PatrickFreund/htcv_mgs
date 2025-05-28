@@ -11,6 +11,8 @@ import torch.utils.data as data
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import ParameterGrid
 
+from utils.EarlyStopping import EarlyStopping
+
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.model import get_model
 
@@ -118,24 +120,24 @@ class GridSearch:
         torch.backends.cudnn.benchmark = False
 
     def gridsearch(
-        self,
-        train_func: Callable,
-        val_func: Callable,
-        train_loader: data.DataLoader,
-        val_loader: data.DataLoader,
-        save_best_model_path: Union[str, Path, None] = None
+            self,
+            train_func: Callable,
+            val_func: Callable,
+            train_loader: data.DataLoader,
+            val_loader: data.DataLoader,
+            save_best_model_path: Union[str, Path, None] = None
     ) -> Tuple[float, Dict]:
-        """Function performs exhaustiv gridsearch of all possible combinations of the given 
+        """Function performs exhaustiv gridsearch of all possible combinations of the given
         hyperparameter grid.
 
         Args:
             train_func (Callable): Function that takes in the model, train_loader, loss_fn, optimizier and epochs and returns the training loss
             val_func (Callable): Function that takes in the trained model, val_loader, loss_fn and returns the val_loss
-            train_loader (data.DataLoader): DataLoader for the training subset 
+            train_loader (data.DataLoader): DataLoader for the training subset
             val_loader (data.DataLoader): DataLoader of the validation subset
-        
+
         Return:
-            best_loss (float): best validation loss 
+            best_loss (float): best validation loss
             best_params (Dict): best hyperparameters
         """
         best_params: Dict = {}
@@ -151,26 +153,39 @@ class GridSearch:
             optimizer = self._get_optimizer(params, model)
             scheduler = self._get_lr_scheduler(params, optimizer)
 
+            early_stopping = EarlyStopping(patience=5, delta=0.01)
+
             epochs = params["epochs"]
-            train_losses, train_metrics = train_func(model, train_loader, criterion, optimizer, scheduler, epochs)
-            val_loss, val_metrics = val_func(model, val_loader, criterion)
+            train_losses, train_metrics = [], []
 
-            # Logging
-            model_name = self.model_args.get("name", model.__class__.__name__)
-            self.writer.add_text(f"Run_{i}/Model_Name", model_name)
-            self.writer.add_text("Seed", self.config["General"]["seed"])
+            for epoch in range(epochs):
+                train_loss, train_metric = train_func(model, train_loader, criterion, optimizer, scheduler)
+                val_loss, val_metrics = val_func(model, val_loader, criterion)
 
-            for epoch_idx, (train_loss, train_metric_dict) in enumerate(zip(train_losses, train_metrics)):
-                self.writer.add_scalar(f"Run_{i}/Train_Loss", train_loss, epoch_idx)
-                for metric_name, value in train_metric_dict.items():
-                    self.writer.add_scalar(f"Run_{i}/Train_{metric_name}", value, epoch_idx)
+                train_losses.append(train_loss)
+                train_metrics.append(train_metric)
 
-            self.writer.add_scalar(f"Run_{i}/Val_Loss", val_loss, len(train_losses) - 1)
+                # Logging
+                model_name = self.model_args.get("name", model.__class__.__name__)
+                self.writer.add_text(f"Run_{i}/Model_Name", model_name)
+                self.writer.add_text("Seed", self.config["General"]["seed"])
+                self.writer.add_scalar(f"Run_{i}/Train_Loss", train_loss, epoch)
+
+                for metric_name, value in train_metric.items():
+                    self.writer.add_scalar(f"Run_{i}/Train_{metric_name}", value, epoch)
+                self.writer.add_scalar(f"Run_{i}/Val_Loss", val_loss, epoch)
+                for metric_name, value in val_metrics.items():
+                    self.writer.add_scalar(f"Run_{i}/{metric_name}", value, epoch)
+
+                early_stopping(val_loss)
+                if early_stopping.early_stop:
+                    print(f"Early stopping triggered at epoch {epoch}")
+                    break
+
+            self.writer.add_scalar(f"Run_{i}/Final_Val_Loss", val_loss, len(train_losses) - 1)
             for metric_name, value in val_metrics.items():
                 self.writer.add_scalar(f"Run_{i}/{metric_name}", value, len(train_losses) - 1)
-            
-            metrics_with_loss = {"val_loss": val_loss, **val_metrics}
-            self.writer.add_hparams(params, metrics_with_loss)
+            self.writer.add_hparams(params, {"val_loss": val_loss, **val_metrics})
 
             if val_loss < best_loss:
                 best_loss = val_loss
