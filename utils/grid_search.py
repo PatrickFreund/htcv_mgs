@@ -123,8 +123,8 @@ class GridSearch:
             self,
             train_func: Callable,
             val_func: Callable,
-            train_loader: data.DataLoader,
-            val_loader: data.DataLoader,
+            train_loader: List[data.DataLoader],
+            val_loader: List[data.DataLoader],
             save_best_model_path: Union[str, Path, None] = None
     ) -> Tuple[float, Dict]:
         """Function performs exhaustiv gridsearch of all possible combinations of the given
@@ -158,6 +158,8 @@ class GridSearch:
             epochs = params["epochs"]
             train_losses, train_metrics = [], []
 
+            # for fold in dataloader_list:
+            #      train_loader, val_loader = fold
             for epoch in range(epochs):
                 train_loss, train_metric = train_func(model, train_loader, criterion, optimizer, scheduler)
                 val_loss, val_metrics = val_func(model, val_loader, criterion)
@@ -196,3 +198,14 @@ class GridSearch:
             torch.save(best_model_state, save_best_model_path)
 
         return best_loss, best_params
+
+
+# Fold erstellung auslagern
+
+# das training und loggin auslagern und nun in gridsearch aufrufen
+
+# neue Klasse für Dataset erstellen die idx und df nimmt und daraus ein torch.utils.data.Dataset macht 
+# und somit transforms für train und val separat anwendbar sind
+
+# in jeder Iteration der Parameterkombinationen die folds neu erstellen aber mit fixen (train_idx, val_idx) in splits
+

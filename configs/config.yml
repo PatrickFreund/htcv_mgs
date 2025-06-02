@@ -1,0 +1,29 @@
+Baseline:
+  epochs: 200
+  loss_fn: "CrossEntropy"
+  optim: "Adam"
+  lr: 0.001 # not set in the baseline paper but its the pytorch default
+  scheduler: "StepLR"
+  scheduler_step_size: 5
+  scheduler_gamma: 0.5
+  batch_size: 32
+
+Hyperparameters:
+  epochs: [200]
+  loss_fn: ["CrossEntropy"]
+  optim: ["Adam"]
+  weight_decay: [0.0, 1e-4, 1e-5]
+  # momentum: [0.0, 0.5, 0.9]  # Nur bei SGD sinnvoll
+  batch_size: [16, 32, 64]
+  lr: [0.01, 0.005, 0.001, 0.0005]
+  scheduler: ["none", "StepLR"]
+  scheduler_step_size: [5, 10]
+  scheduler_gamma: [0.1, 0.5]
+
+Model:
+  model_name: "resnet18"
+  num_classes: 2
+  pretrained: False
+
+General:
+  seed: 42
