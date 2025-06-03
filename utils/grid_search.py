@@ -153,7 +153,7 @@ class GridSearch:
             optimizer = self._get_optimizer(params, model)
             scheduler = self._get_lr_scheduler(params, optimizer)
 
-            early_stopping = EarlyStopping(patience=5, delta=0.01)
+            early_stopping = EarlyStopping(patience=10, delta=0.01)
 
             epochs = params["epochs"]
             train_losses, train_metrics = [], []

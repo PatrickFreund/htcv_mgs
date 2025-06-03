@@ -18,8 +18,10 @@ def train_func(
     all_preds = []
     all_labels = []
 
+    device = next(model.parameters()).device
+
     for inputs, labels in train_loader:
-        inputs, labels = inputs.to(model.device), labels.to(model.device)
+        inputs, labels = inputs.to(device), labels.to(device)
         optimizer.zero_grad()
         outputs = model(inputs)
         loss = criterion(outputs, labels)
@@ -58,9 +60,11 @@ def val_func(
     all_preds = []
     all_labels = []
 
+    device = next(model.parameters()).device
+
     with torch.no_grad():
         for inputs, labels in val_loader:
-            inputs, labels = inputs.to(model.device), labels.to(model.device)
+            inputs, labels = inputs.to(device), labels.to(device)
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             val_loss += loss.item()
