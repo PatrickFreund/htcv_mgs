@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, List, Union, Tuple, Callable
+from datetime import datetime
+import sys
+from typing import Optional, Dict, Any, List, Union, Tuple, Callable, Type
 
+import numpy as np
+import yaml
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -11,6 +15,11 @@ import torchvision.transforms as transforms
 from sklearn.model_selection import ParameterGrid, KFold
 from torch.utils.data import DataLoader, Dataset, Subset
 from torch.utils.tensorboard import SummaryWriter
+
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from utils.model import get_model
+from datamodule.dataset import ImageCSVDataset
+from datamodule.transforms import get_train_transforms, get_val_transforms
 
 
 # ========== Data Related Classes ==========
@@ -165,8 +174,15 @@ class Logger(ABC):
     @abstractmethod
     def log_model(self, model, name: str):
         pass
+    
+    @abstractmethod
+    def log_hparams(self, hparams: Dict[str, Any], metrics: Dict[str, float]):
+        pass
+    
+    @abstractmethod
+    def close(self):
+        pass
 
-# Muss noch so angepasst werden, dass der Trainer nicht immer den Pfad korrekt angeben muss oder zumindest nur foldx/paramx/... oder so
 class TensorBoardLogger(Logger):
     def __init__(self, log_dir: Union[str, Path]):
         if isinstance(log_dir, str):
@@ -186,17 +202,30 @@ class TensorBoardLogger(Logger):
     def log_model(self, model, name):
         self.writer.add_graph(model)
 
+    def log_hparams(self, hparams: Dict[str, Any], metrics: Dict[str, float]): 
+        self.writer.add_hparams(
+            hparams,
+            metrics
+        )
+    
+    def close(self):
+        self.writer.close()
 
 
 # ========== Training Related Classes ==========
 class EarlyStopping:
-    def __init__(self, patience):
+    def __init__(self, mode: str,  patience: int = 10):
         self.patience = patience
+        self.mode = mode
         self.counter = 0
         self.best_metric = None
-
-    def should_stop(self, metric):
-        if self.best_metric is None or metric > self.best_metric:
+    
+    def __call__(self, metric: float) -> bool:
+        if self.best_metric is None:
+            self.best_metric = metric
+            return False
+        
+        if self._is_improvement(metric):
             self.best_metric = metric
             self.counter = 0
             return False
@@ -204,8 +233,20 @@ class EarlyStopping:
             self.counter += 1
             return self.counter >= self.patience
 
+    def _is_improvement(self, metric: float) -> bool:
+        if self.mode == "min":
+            return metric < self.best_metric
+        elif self.mode == "max":
+            return metric > self.best_metric 
+        else:
+            raise ValueError(f"Invalid mode '{self.mode}' for EarlyStopping. Use 'min' or 'max'.")
 
-# Da kein neuer Trainer erstellt wird muss EarlyStopping entweder immer neu erstellt werden oder am ende von train gelöscht werden
+    def reset(self):
+        self.counter = 0
+        self.best_metric = None
+        self.mode = None
+        self.patience = 10
+
 class ModelTrainer:
     def __init__(
         self,
@@ -215,11 +256,13 @@ class ModelTrainer:
     ) -> None:
         self.model_builder = model_builder
         self.optimizer_builder = optimizer_builder
-
+        self.logger = None
+        
+        self.main_metric, self.mode = self._resolve_main_metric(kwargs.get("main_metric", "f1"))
         self.shuffle = kwargs.get("shuffle", True)
         early_stopp = kwargs.get("early_stopping", False)
         patience = kwargs.get("patience", None)
-        self.early_stopping = self._resolve_early_stopping(early_stopping=early_stopp, patience=patience)
+        self.early_stopping: EarlyStopping = self._resolve_early_stopping(early_stopping=early_stopp, mode = self.mode, patience=patience)
         strategy = kwargs.get("balancing_strategy", NoBalancingStrategy())
         class_weights = kwargs.get("class_weights", None)
         self._check_class_weights(class_weights, strategy)
@@ -262,23 +305,34 @@ class ModelTrainer:
         else:
             raise TypeError("Balancing strategy must be a string or an instance of BalancingStrategy.")
 
-    def _resolve_early_stopping(self, early_stopping: Union[bool, EarlyStopping], patience: Optional[int] = None) -> Optional[EarlyStopping]:
+    def _resolve_early_stopping(self, early_stopping: Union[bool, EarlyStopping], mode: str, patience: Optional[int] = None) -> EarlyStopping:
         if patience is not None and not isinstance(patience, int):
             raise TypeError("Patience must be an integer if specified.")
         
         if isinstance(early_stopping, bool):
             if early_stopping:
                 if not patience:
-                    raise ValueError("Patience must be specified if early stopping is enabled.")
-                return EarlyStopping(patience = patience)
+                    return EarlyStopping(mode = mode)
+                return EarlyStopping(patience = patience, mode = mode)
             else:
                 return None
         elif isinstance(early_stopping, EarlyStopping):
-            if patience is not None:
-                raise ValueError("Patience should not be specified if an EarlyStopping instance is provided.")
+            early_stopping.reset()
+            early_stopping.mode = mode
+            early_stopping.patience = patience if patience is not None else early_stopping.patience
             return early_stopping
         else:
             raise TypeError("Early stopping must be an boolean or an instance of EarlyStopping.")
+    
+    def _resolve_main_metric(self, main_metric: str) -> str:
+        valid_metrics = ["loss", "acc", "f1", "precision", "recall"]
+        if main_metric not in valid_metrics:
+            raise ValueError(f"Invalid main metric '{main_metric}' provided. Valid options are: {valid_metrics}")
+        if main_metric in ["loss"]:
+            mode = "min"
+        else:
+            mode = "max"
+        return main_metric, mode
     
     def _check_class_weights(self, class_weights: Optional[Dict[int, float]], balancing_strategy: Union[str, BalancingStrategy]) -> None:
         strategy_name = getattr(balancing_strategy, "name", balancing_strategy)
@@ -343,7 +397,8 @@ class ModelTrainer:
             "recall": recall_score(all_labels, all_preds, average='weighted'),
         }
 
-    def _val_func(
+    def _validate_one_epoch(
+        self,
         model: nn.Module,
         val_loader: DataLoader,
         criterion: _Loss
@@ -374,66 +429,149 @@ class ModelTrainer:
         }
         return metrics
 
-    def train(self, config: Dict[str, Any], train_data: Dataset, val_data: Dataset) -> float:
-        model: nn.Module = self.model_builder(config)
-        model = model.to(self.device)
-        optimizier: torch.optim.Optimizer = self.optimizer_builder(model.parameters(), config)
+    def set_logger(self, log_path: Union[str, Path]) -> None:
+        """
+        Sets the logger for the trainer. This method should be called before training starts to
+        ensure that all training metrics are logged correctly.
+
+        Args:
+            log_path (Path): The path where the logs will be saved. This should be a valid directory path.
+        """
+        if self.logger is not None:
+            self.logger.close()
+            self.logger = None # Reset logger to avoid memory leaks
+        
+        if not isinstance(log_path, (str, Path)):
+            raise TypeError(f"log_path must be a string or a Path object, not {type(log_path)}")
+        if not isinstance(log_path, str):
+            log_path = Path(log_path).resolve()
+        if not log_path.exists():
+            raise FileNotFoundError(f"The specified log path does not exist: {log_path}")
+        self.logger = TensorBoardLogger(log_path)
+        
+    def train(self, config: Dict[str, Any], train_data: Dataset, val_data: Dataset) -> Dict[str, Any]:
+        model: nn.Module = self.model_builder(config).to(self.device)
+        optimizer: torch.optim.Optimizer = self.optimizer_builder(model.parameters(), config)
         
         train_loader, train_criterion = self.balancing_strategy.prepare(train_data, config, device = self.device)
         val_loader = DataLoader(val_data, batch_size = config["batch_size"], shuffle = self.shuffle)
         val_criterion = nn.CrossEntropyLoss()
-        lr_scheduler = self._resolve_lr_scheduler(config, optimizier)
+        lr_scheduler = self._resolve_lr_scheduler(config, optimizer)
         
+
         history = {
             "train": {"loss": [], "acc": [], "f1": [], "precision": [], "recall": []},
             "val": {"loss": [], "acc": [], "f1": [], "precision": [], "recall": []}
         }
+        best_epoch = 0
+        if self.logger:
+            self.logger.log_params(config)
 
         for epoch in range(config['epochs']):
-            train_metrics = self._train_one_epoch(model, train_loader, optimizier, train_criterion, lr_scheduler)
-            val_metrics = self._validate(model, val_loader, val_criterion)
+            train_metrics = self._train_one_epoch(model, train_loader, optimizer, train_criterion, lr_scheduler)
+            val_metrics = self._validate_one_epoch(model, val_loader, val_criterion)
             
             for key in history["train"]:
                 history["train"][key].append(train_metrics[key])
                 history["val"][key].append(val_metrics[key])
+                
+                if self.logger:
+                    self.logger.log_scalar(f"train/{key}", train_metrics[key], epoch)
+                    self.logger.log_scalar(f"val/{key}", val_metrics[key], epoch)
 
-            if self.early_stopping and self.early_stopping.should_stop(val_metrics["loss"]):
+            # Check for the best epoch based on the main metric
+            if self.mode == "min":
+                if history["val"][self.main_metric][-1] < history["val"][self.main_metric][best_epoch]:
+                    best_epoch = epoch
+            else:
+                if history["val"][self.main_metric][-1] > history["val"][self.main_metric][best_epoch]:
+                    best_epoch = epoch
+            
+            # Early stopping check if early stopping is enabled
+            if self.early_stopping and self.early_stopping(val_metrics[self.main_metric]):
                 break
 
-        return history
+        if self.early_stopping:
+            self.early_stopping.reset()
+        if self.logger:
+            self.logger.close()
+            self.logger = None  # Reset logger to avoid memory leaks
 
+        return {
+            "history": history,
+            "best_epoch": best_epoch,
+            "best_val_metrics": {key: history["val"][key][best_epoch] for key in history["val"]},
+        }
 
-
-class CrossValidator:
+class ModelEvaluator:
     def __init__(
         self, 
         dataset: Dataset, 
         trainer: ModelTrainer, 
-        data_splitter: SplitStrategy,  
-        transforms: Dict[str, transforms.Compose], 
-        k: int = 5
+        data_splitter: SplitStrategy
     ) -> None:
         self.dataset = dataset
         self.trainer = trainer
         self.splitter = data_splitter
-        self.transforms = transforms
-        self.k = k
+        self.log_path: Optional[Path] = None
 
-    def run(self, config: Dict[str, Any]) -> float:
+    def set_log_path(self, log_path: Union[str, Path]) -> None:
+        if not isinstance(log_path, (str, Path)):
+            raise TypeError(f"log_path must be a string or a Path object, not {type(log_path)}")
+        if isinstance(log_path, str):
+            log_path = Path(log_path).resolve()
+        self.log_path = log_path
+
+    def run(self, config: Dict[str, Any]) -> Tuple[float, float]:
         scores = []
-        for train_indices, val_indices in self.splitter.get_splits(self.dataset):
+        fold_results = []
+        
+        for fold_idx, (train_indices, val_indices) in enumerate(self.splitter.get_splits(self.dataset)):
             train_data, val_data = Subset(self.dataset, train_indices), Subset(self.dataset, val_indices)
-            score = self.trainer.train(config, train_data, val_data)
-            scores.append(score)
-        return sum(scores) / len(scores)
+            
+            try:
+                if self.log_path:
+                    fold_log_path = self.log_path / f"fold_{fold_idx}"
+                    fold_log_path.mkdir(parents=True, exist_ok=True)
+                    self.trainer.set_logger(fold_log_path)
+                
+                results = self.trainer.train(config, train_data, val_data)
+                best_score = results["best_val_metrics"][self.trainer.main_metric]
+                scores.append(best_score)
+                fold_results.append(results["best_val_metrics"])
 
+            except Exception as e:
+                print(f"Error during training fold {fold_idx}: {e}")
+        
+        if self.log_path:
+            logger = TensorBoardLogger(self.log_path)
+            
+            all_keys = fold_results[0].keys()
+            mean_metrics = {
+                key: float(np.mean([fold[key] for fold in fold_results])) for key in all_keys
+            }
+            std_metrics = {
+                key: float(np.std([fold[key] for fold in fold_results])) for key in all_keys
+            }
+            
+            hparams = {k: config[k] for k in config if isinstance(config[k], (int, float, str))}
+            final_metrics = {f"mean_{k}": mean_metrics[k] for k in mean_metrics}
+            final_metrics.update({f"std_{k}": std_metrics[k] for k in std_metrics})
+
+            logger.log_hparams(hparam_dict=hparams, metric_dict=final_metrics)
+            logger.close()
+            
+            return mean_metrics[self.trainer.main_metric], std_metrics[self.trainer.main_metric]
+        else:
+            return float(np.mean(scores)), float(np.std(scores))
 
 
 # ========== Search Strategy Implementation ==========
 class SearchStrategy(ABC):
-    def __init__(self, search_space: Dict, cross_validator: CrossValidator):
+    def __init__(self, search_space: Dict, model_validator: ModelEvaluator, log_base_path: Optional[Path] = None):
         self.search_space = search_space
-        self.cross_validator = cross_validator
+        self.model_validator = model_validator
+        self.log_base_path = Path(log_base_path) if log_base_path else None
 
     @abstractmethod
     def search(self):
@@ -448,19 +586,9 @@ class SearchStrategy(ABC):
         """
 
 class GridSearch(SearchStrategy):
-    def search(self) -> Tuple[Dict[str, Any], float]:
-        best_score = float('-inf')
-        best_config = None
-        for config in self._generate_grid():
-            score = self.evaluate_config(config)
-            if score > best_score:
-                best_score = score
-                best_config = config
-        return best_config, best_score
-
-    def evaluate_config(self, config):
-        return self.cross_validator.run(config)
-
+    def _sanitize_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        return {k: v for k, v in config.items() if isinstance(v, (str, int, float))}
+    
     def _generate_grid(self) -> List[Dict[str, Any]]:
         """
         Takes the search space dictionary of form {param_name: [value1, value2, ...], ...}
@@ -481,98 +609,148 @@ class GridSearch(SearchStrategy):
 
         return configs
 
+    def _get_config_log_path(self, config: Dict[str, Any]) -> Optional[Path]:
+        if not self.log_base_path:
+            return None
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        config_dir = self.log_base_path / f"config_{timestamp}"
+        config_dir.mkdir(parents=True, exist_ok=True)
+
+        # YAML speichern
+        config_yaml_path = config_dir / "config.yaml"
+        with open(config_yaml_path, "w") as f:
+            yaml.dump(self._sanitize_config(config), f)
+
+        return config_dir
+
+    def search(self) -> Tuple[Dict[str, Any], float, float]:
+        """
+        Searches for the best configuration by evaluating all combinations of hyperparameters
+        in the search space. It uses the model validator to evaluate each configuration and 
+        keeps track of the best configuration based on the mean score across folds.
+
+        Returns:
+            Tuple[Dict[str, Any], float, float]: Best configuration, its mean score, and std score.
+        """
+        best_mean_score = float('-inf')
+        best_std_score = None
+        best_config = None
+
+        for config in self._generate_grid():
+            log_path = self._get_config_log_path(config)
+            if log_path:
+                self.model_validator.set_log_path(log_path)
+
+            mean_score, std_score = self.evaluate_config(config)
+            if mean_score > best_mean_score:
+                best_mean_score = mean_score
+                best_std_score = std_score
+                best_config = config
+
+        return best_config, best_mean_score, best_std_score
+
+    def evaluate_config(self, config):
+        return self.model_validator.run(config)
 
 
-
-
-
-
-
-
+# ========== Experiment Class ==========
 class Experiment:
     def __init__(
         self,
-        dataset,
-        search_strategy_cls,
-        search_space,
-        trainer_cfg,
-        transforms,
-        k_folds=5
+        dataset: Dataset,
+        search_strategy_cls: Type[SearchStrategy],
+        search_space: Dict[str, List[Any]],
+        trainer_cfg: Dict[str, Any],
+        split_strategy: SplitStrategy,
+        log_base_path: Optional[Union[str, Path]] = None,
     ) -> None:
         self.dataset = dataset
         self.search_strategy_cls = search_strategy_cls
         self.search_space = search_space
         self.trainer_cfg = trainer_cfg
-        self.transforms = transforms
-        self.k_folds = k_folds
+        self.split_strategy = split_strategy
+        self.log_base_path = Path(log_base_path).resolve() if log_base_path else None
 
-    def run(self) -> Tuple[Dict[str, Any], float]:
-        splitter = DataSplitter()
-        early_stopping = EarlyStopping(patience=self.trainer_cfg['patience'])
-        trainer = ModelTrainer(**self.trainer_cfg, early_stopping=early_stopping)
-        cross_validator = CrossValidator(
+    def run(self) -> Tuple[Dict[str, Any], float, float]:
+        # Setup Trainer
+        trainer = ModelTrainer(
+            **self.trainer_cfg,
+        )
+
+        # Setup ModelEvaluator
+        model_validator = ModelEvaluator(
             dataset=self.dataset,
             trainer=trainer,
-            data_splitter=splitter,
-            transforms=self.transforms,
-            k=self.k_folds
+            data_splitter=self.split_strategy
         )
+
+        # Setup SearchStrategy
         strategy = self.search_strategy_cls(
             search_space=self.search_space,
-            cross_validator=cross_validator
+            model_validator=model_validator,
+            log_base_path=self.log_base_path
         )
+
         return strategy.search()
+    
+    
+    
+if __name__ == "__main__":
+    # Generell müssen die Seeds noch irgendwo gesetzt werden, damit in jedem Fold? der Seed geändert wird oder so (oder random?) es muss auf jeden fall eine lösung dafür gefunden werden, dass die Ergebnisse repoduierbar sind
+    
+    # !!!! nicht so viele auf einmal zu beginn
+    search_space = {
+        "batch_size": [16, 32],
+        "epochs": [30],
+        "model_name": ["resnet18"],
+        "optim": ["Adam", "SGD"],
+        "lr_scheduler": ["step", "cosine", "none"],
+        "scheduler_step_size": [10],
+        "scheduler_gamma": [0.1],
+        "scheduler_t_max": [30],
+    }
 
-experiment = Experiment(
-    dataset=my_dataset,
-    search_strategy_cls=GridSearch,
-    search_space=search_space,
-    trainer_cfg=trainer_config,
-    transforms=TransformProvider(),
-    k_folds=5
-)
-best_config, best_score = experiment.run()
+    # 2. Trainer-Konfiguration definieren
+    # !!!! geht dass, dass man hier model_builder und optimizier_builder so übergibt mit und *train_config alles richtig für die initialisierung von ModelTrainer übergeben wird oder müssen die callables explizit definiert werden?
+    # !!!! get_model muss daran angepasst werden eine config zu erhalten
+    # !!!! optimizer_builder muss noch geschrieben werden
+    trainer_config = {
+        "model_builder": get_model,
+        "optimizer_builder": Callable, 
+        "shuffle": True,
+        "early_stopping": True,
+        "patience": 7,
+        "main_metric": "f1",
+        "balancing_strategy": "weighted_loss",  # oder "no_balancing", "oversampling"
+        "device": "cuda",
+        "class_weights": {0: 0.5, 1: 0.5},  # oder None wenn nicht benötigt
+    }
+
+    # 3. Dataset vorbereiten
+    # !!!! Trainings und Validierungstransforms müssen eigentlich in den model validator oder so und dort an die subsets übergeben werden oder so
+    dataset_path = Path("path/to/dataset/train")  # Struktur: data/ & labels/labels.csv
+    dataset = ImageCSVDataset(data_dir=dataset_path, transform=)
 
 
+    # 5. Splitstrategie auswählen
+    split_strategy = KFoldSplit(k=5, seed=42)
 
+    # 6. Loggingpfad setzen
+    log_base_path = Path("logs/gridsearch_run")
 
-class ModelTrainer:
-    def __init__(self, ..., logger: Optional[Logger] = None):
-        self.logger = logger
+    # 7. Experiment starten
+    experiment = Experiment(
+        dataset=dataset,
+        search_strategy_cls=GridSearch,
+        search_space=search_space,
+        trainer_cfg=trainer_config,
+        transforms=transforms,
+        split_strategy=split_strategy,
+        log_base_path=log_base_path
+    )
 
-    def train(self, config, train_loader, val_loader):
-        ...
-        for epoch in range(config['epochs']):
-            train_loss = self._train_one_epoch(...)
-            val_score = self._validate(...)
-
-            if self.logger:
-                self.logger.log_scalar("train/loss", train_loss, epoch)
-                self.logger.log_scalar("val/score", val_score, epoch)
-
-            if self.early_stopping.should_stop(val_score):
-                break
-        return val_score
-
-log_dir = f"runs/config_{hashlib.md5(str(config).encode()).hexdigest()[:8]}"
-logger = TensorBoardLogger(log_dir)
-trainer = ModelTrainer(..., logger=logger)
-
-
-# ========== trainer_cfg ==========
-trainer_cfg = {
-    "model_builder": build_model,
-    "optimizer_builder": build_optimizer,
-    "balancing_strategy": WeightedLossBalancing(),
-    # kein 'shuffle', kein 'batch_size' hier
-}
-
-# ========== config (Hyperparameter-Suchraum) ==========
-search_space = {
-    "lr": [0.001, 0.01],
-    "batch_size": [32, 64],
-    "momentum": [0.0, 0.9],
-    "epochs": [10],
-    "scheduler": ["none", "step"],
-    ...
-}
+    if __name__ == "__main__":
+        best_config, best_mean, best_std = experiment.run()
+        print("✅ Best configuration found:")
+        print(best_config)
+        print(f"Mean score: {best_mean:.4f} ± {best_std:.4f}")
