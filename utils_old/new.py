@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
+from dataclasses import dataclass, field
 import sys
+import os
 from typing import Optional, Dict, Any, List, Union, Tuple, Callable, Type
 
 import numpy as np
@@ -11,16 +13,173 @@ import torch.nn as nn
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from torch.nn.modules.loss import _Loss
 from torch.optim.lr_scheduler import _LRScheduler
-import torchvision.transforms as transforms
 from sklearn.model_selection import ParameterGrid, KFold
 from torch.utils.data import DataLoader, Dataset, Subset
 from torch.utils.tensorboard import SummaryWriter
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from utils.model import get_model
-from datamodule.dataset import ImageCSVDataset
+from utils.model import get_model, get_optimizer
+from datamodule.dataset import ImageCSVDataset, TransformSubset
 from datamodule.transforms import get_train_transforms, get_val_transforms
 
+
+# For testing purposes:
+from PIL import Image
+import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+import torchvision.transforms.functional as TF
+from torch.utils.data import Subset
+from PIL import Image
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import torch
+from PIL import Image
+from pathlib import Path
+
+def debug_visualize_transform(transform_subset:TransformSubset, config: dict, sample_idx: int = 3):
+    """
+    Visualisiert ein Originalbild und seine transformierte Version
+    aus einem TransformSubset.
+
+    Args:
+        transform_subset (TransformSubset): Subset mit definierter transform-Funktion.
+        config (dict): Dict mit "mean" und "std" (für Denormalisierung).
+        sample_idx (int): Index im Subset, der visualisiert werden soll.
+    """
+    # Index und zugrundeliegender Datensatz
+    original_dataset = transform_subset.base_dataset
+    original_idx = transform_subset.indices[sample_idx]
+
+    # Bildinformationen abrufen
+    row = original_dataset.labels.iloc[original_idx]
+    img_name = row["filename"]
+    img_path = original_dataset.img_dir / img_name
+
+    if not img_path.exists():
+        img_stem = Path(img_name).stem
+        possible_files = list(original_dataset.img_dir.glob(f"{img_stem}.*"))
+        if not possible_files:
+            raise FileNotFoundError(f"Bild {img_name} nicht gefunden.")
+        img_path = possible_files[0]
+
+    # Lade Originalbild
+    original_img = Image.open(img_path)
+    if original_img.mode == "L":
+        original_img = original_img.convert("L")
+        cmap = "gray"
+    else:
+        original_img = original_img.convert("RGB")
+        cmap = None
+
+    # Transformiertes Bild abrufen
+    transformed_img, label = transform_subset[sample_idx]
+
+    # Denormalisierung
+    def denormalize(tensor, mean, std):
+        mean = torch.tensor(mean).view(-1, 1, 1)
+        std = torch.tensor(std).view(-1, 1, 1)
+        return (tensor * std + mean).clamp(0, 1)
+
+    mean = config.get("mean", [0.5])
+    std = config.get("std", [0.5])
+    denorm_img = denormalize(transformed_img.clone(), mean, std)
+
+    # Plot erstellen
+    plt.figure(figsize=(8, 4))
+    plt.subplot(1, 2, 1)
+    plt.title("Original")
+    plt.imshow(original_img, cmap=cmap)
+    plt.axis("off")
+
+    plt.subplot(1, 2, 2)
+    plt.title("Transformiert (Denormalisiert)")
+    if denorm_img.shape[0] == 1:
+        plt.imshow(denorm_img.squeeze(), cmap="gray")
+    else:
+        plt.imshow(denorm_img.permute(1, 2, 0))  # CHW -> HWC
+    plt.axis("off")
+
+    plt.suptitle(f"Label: {label} | Datei: {img_name}")
+    plt.tight_layout()
+    plt.show()
+
+def test_image_is_grayscale():
+    dataset = ImageCSVDataset(data_dir=r"C:\Users\Freun\Desktop\htcv_mgs\data\MGS_data")
+    train_transform = get_train_transforms(mean = 0.36995071172714233, std = 0.21818380057811737)
+    for or_img, label in dataset:
+        img = train_transform(or_img)
+        assert isinstance(img, torch.Tensor), "Bild sollte ein Tensor sein"
+        assert img.dim() == 3, "Bild sollte 3 Dimensionen haben (Kanal, Höhe, Breite)"
+        assert img.shape[0] == 1, "Bild sollte 1 Kanal haben (Grayscale)"
+        assert img.shape[1] == 224 and img.shape[2] == 224, "Bildgröße sollte 224x224 sein"
+        print(f"Bildgröße: {or_img.size}, Label: {label}")
+        print(f"Transformiertes Bildgröße: {img.shape}")
+        print(f"Transformiertes Bild dtype: {img.dtype}")
+    
+    or_img, label = dataset[0]
+    print(f"Bildgröße: {or_img.size}, Label: {label}")
+    print(f"Transformiertes Bildgröße: {img.shape}")
+    print(f"Transformiertes Bild dtype: {img.dtype}")
+
+    #plot original and transformed image
+    plt.figure(figsize=(8, 4))
+    plt.subplot(1, 2, 1)
+    plt.title("Original")
+    plt.imshow(or_img, cmap="gray")
+    plt.axis("off")
+    
+    plt.subplot(1, 2, 2)
+    plt.title("Transformiert")
+    plt.imshow(img.squeeze(), cmap="gray")
+    plt.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+def test_train_transforms_randomness():
+    # Dummy-Graustufenbild
+    img = torch.rand(1, 224, 224)
+    train_transform = get_train_transforms(mean = 0.36995071172714233, std = 0.21818380057811737)
+    val_transform = get_val_transforms(mean = 0.36995071172714233, std = 0.21818380057811737)
+    
+    
+    img1 = transform(img)
+    img2 = transform(img)
+
+    # Bei Random Transforms sollten die Ausgaben unterschiedlich sein
+    assert not torch.equal(img1, img2), "Random Transforms sollten unterschiedliche Ergebnisse liefern"
+
+def test_resnet18_input_output():
+    config = {
+        "model_name": "resnet18",
+        "pretrained": False,
+        "num_classes": 2,
+    }
+    model = get_model(config)
+    
+    # Eingabe: Batch aus 1-Kanal-Bildern mit 224x224
+    assert isinstance(model, nn.Module), "Modell sollte eine Instanz von nn.Module sein"
+    print(f"Modellarchitektur:\n{model}")
+    dummy_input = torch.randn(4, 1, 224, 224)
+    output = model(dummy_input)
+    print(f"Modellausgabeform: {output.shape}")
+
+    assert output.shape == (4, 2), "Modell muss 2 Outputneuronen liefern für binary classification"
+
+
+def set_seed(seed: int):
+    """
+    Sets the random seed for reproducibility across various libraries.
+    
+    Args:
+        seed (int): The seed value to set.
+    """
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 # ========== Data Related Classes ==========
 
@@ -28,6 +187,12 @@ class SplitStrategy(ABC):
     @abstractmethod
     def get_splits(self, dataset: Dataset) -> List[Tuple[List[int], List[int]]]:
         pass
+
+    def set_seed(self, seed: int):
+        """
+        Sets the random seed for reproducibility.
+        """
+        self.seed = seed
 
 class KFoldSplit(SplitStrategy):
     def __init__(self, k: int, seed: int = 42):
@@ -76,6 +241,7 @@ class BalancingStrategy(ABC):
         self,
         train_subset: Dataset,
         config: Dict[str, Any],
+        device: torch.device,
     ) -> Tuple[DataLoader, Optional[torch.nn.Module]]:
         pass
 
@@ -92,7 +258,7 @@ class NoBalancingStrategy(BalancingStrategy):
         self, 
         train_subset: Dataset,
         config: Dict[str, Any],
-        device: torch.device = None,
+        device: torch.device
     ) -> Tuple[DataLoader, nn.CrossEntropyLoss]:
         lossfn = nn.CrossEntropyLoss()
         loader = DataLoader(train_subset, batch_size=config["batch_size"], shuffle=config.get("shuffle", True))
@@ -117,17 +283,17 @@ class WeightedLossBalancing(BalancingStrategy):
         Prepares a DataLoader and a weighted CrossEntropyLoss function based on the class distribution in the dataset.
         Args:
             train_subset (Dataset): The train_subset containing the training data.
-            model (torch.nn.Module): The model for which the loss is computed. 
-            config (Dict[str, Any]): Configuration dictionary containing parameters like batch size, shuffle, weighenings for the classes, etc.
-            transforms (Dict[str, Any]): Dictionary of transforms to apply to the dataset.
+            config (Dict[str, Any]): Configuration dictionary containing parameters like batch size.
+            device (torch.device): The device to which the tensors should be moved (e.g., "cuda" or "cpu").
         
         Returns:
             Tuple[DataLoader, nn.CrossEntropyLoss]: A DataLoader for the dataset and a weighted CrossEntropyLoss function.
         """
-        class_weights: Dict[int, float] = config.get("class_weights")
-        _, weights = zip(*sorted(class_weights.items()))   
-
-        weights = torch.tensor(weights, dtype = torch.float32, device = device)
+        weights: List[float]
+        if self.class_weights is None:
+            raise ValueError("Class weights must be provided for WeightedLossBalancing strategy.")
+        _, weights = zip(*sorted(self.class_weights.items()))
+        weights: torch.Tensor = torch.tensor(weights, dtype = torch.float32, device = device)
         lossfn = nn.CrossEntropyLoss(weight = weights)
         loader = DataLoader(train_subset, batch_size=config["batch_size"], shuffle=config.get("shuffle", True))
         return loader, lossfn
@@ -144,12 +310,13 @@ class OversamplingBalancing(BalancingStrategy):
         self, 
         train_subset: Dataset,
         config: Dict[str, Any],
-        device: torch.device = None
+        device: torch.device
     ) -> Tuple[DataLoader, nn.CrossEntropyLoss]:
-        class_weights: Dict[int, float] = config.get("class_weights")
-        _, weights = zip(*sorted(class_weights.items()))
-        
-        weights = torch.tensor(weights, dtype=torch.float32, device=device)
+        weights: List[float]
+        if self.class_weights is None:
+            raise ValueError("Class weights must be provided for OversamplingBalancing strategy.")
+        _, weights = zip(*sorted(self.class_weights.items()))
+        weights: torch.Tensor = torch.tensor(weights, dtype=torch.float32, device=device)
         labels = torch.tensor([label for _, label in train_subset], dtype=torch.long, device=device)
         
         sampling_weights = weights[labels]
@@ -244,8 +411,6 @@ class EarlyStopping:
     def reset(self):
         self.counter = 0
         self.best_metric = None
-        self.mode = None
-        self.patience = 10
 
 class ModelTrainer:
     def __init__(
@@ -258,7 +423,7 @@ class ModelTrainer:
         self.optimizer_builder = optimizer_builder
         self.logger = None
         
-        self.main_metric, self.mode = self._resolve_main_metric(kwargs.get("main_metric", "f1"))
+        self.main_metric, self.mode = self._resolve_main_metric(kwargs.get("main_metric", "loss"))
         self.shuffle = kwargs.get("shuffle", True)
         early_stopp = kwargs.get("early_stopping", False)
         patience = kwargs.get("patience", None)
@@ -270,7 +435,7 @@ class ModelTrainer:
         self.device = kwargs.get("device", torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     def _resolve_lr_scheduler(self, config: Dict[str, Any], optimizer: torch.optim.Optimizer) -> Optional[_LRScheduler]:
-        scheduler_type = config.get("lr_scheduler" "none")
+        scheduler_type = config.get("lr_scheduler", "none")
         if scheduler_type == "none":
             return None
 
@@ -312,7 +477,7 @@ class ModelTrainer:
         if isinstance(early_stopping, bool):
             if early_stopping:
                 if not patience:
-                    return EarlyStopping(mode = mode)
+                    raise ValueError("Patience must be specified if early stopping is enabled.")
                 return EarlyStopping(patience = patience, mode = mode)
             else:
                 return None
@@ -324,7 +489,7 @@ class ModelTrainer:
         else:
             raise TypeError("Early stopping must be an boolean or an instance of EarlyStopping.")
     
-    def _resolve_main_metric(self, main_metric: str) -> str:
+    def _resolve_main_metric(self, main_metric: str) -> Tuple[str, str]:
         valid_metrics = ["loss", "acc", "f1", "precision", "recall"]
         if main_metric not in valid_metrics:
             raise ValueError(f"Invalid main metric '{main_metric}' provided. Valid options are: {valid_metrics}")
@@ -410,7 +575,7 @@ class ModelTrainer:
 
         with torch.no_grad():
             for inputs, labels in val_loader:
-                inputs, labels = inputs.to(model.device), labels.to(model.device)
+                inputs, labels = inputs.to(self.device), labels.to(self.device)
                 outputs = model(inputs)
                 loss = criterion(outputs, labels)
                 total_loss += loss.item()
@@ -424,8 +589,8 @@ class ModelTrainer:
             "loss": avg_loss,
             "acc": accuracy_score(all_labels, all_preds),
             "f1": f1_score(all_labels, all_preds, average="weighted"),
-            "precision": precision_score(all_preds, all_labels, average="weighted"),
-            "recall": recall_score(all_preds, all_labels, average="weighted")
+            "precision": precision_score(all_labels, all_preds, average='weighted'),
+            "recall": recall_score(all_labels, all_preds, average='weighted'),
         }
         return metrics
 
@@ -447,19 +612,19 @@ class ModelTrainer:
             log_path = Path(log_path).resolve()
         if not log_path.exists():
             raise FileNotFoundError(f"The specified log path does not exist: {log_path}")
+        self.log_path = log_path
         self.logger = TensorBoardLogger(log_path)
         
     def train(self, config: Dict[str, Any], train_data: Dataset, val_data: Dataset) -> Dict[str, Any]:
         model: nn.Module = self.model_builder(config).to(self.device)
-        optimizer: torch.optim.Optimizer = self.optimizer_builder(model.parameters(), config)
+        optimizer: torch.optim.Optimizer = self.optimizer_builder(model, config)
         
         train_loader, train_criterion = self.balancing_strategy.prepare(train_data, config, device = self.device)
         val_loader = DataLoader(val_data, batch_size = config["batch_size"], shuffle = self.shuffle)
         val_criterion = nn.CrossEntropyLoss()
         lr_scheduler = self._resolve_lr_scheduler(config, optimizer)
-        
 
-        history = {
+        history: Dict[str, Any] = {
             "train": {"loss": [], "acc": [], "f1": [], "precision": [], "recall": []},
             "val": {"loss": [], "acc": [], "f1": [], "precision": [], "recall": []}
         }
@@ -483,9 +648,11 @@ class ModelTrainer:
             if self.mode == "min":
                 if history["val"][self.main_metric][-1] < history["val"][self.main_metric][best_epoch]:
                     best_epoch = epoch
-            else:
+            elif self.mode == "max":
                 if history["val"][self.main_metric][-1] > history["val"][self.main_metric][best_epoch]:
                     best_epoch = epoch
+            else:
+                raise ValueError(f"Invalid mode '{self.mode}' for main metric. Use 'min' or 'max'.")
             
             # Early stopping check if early stopping is enabled
             if self.early_stopping and self.early_stopping(val_metrics[self.main_metric]):
@@ -497,10 +664,100 @@ class ModelTrainer:
             self.logger.close()
             self.logger = None  # Reset logger to avoid memory leaks
 
+        try:
+            torch.save(model.state_dict(), self.log_path / "best_model.pth")
+        except Exception as e:
+            print(f"Error saving model: {e}")
+            print("Model will not be saved. Please check the log path and permissions.")
+            
+
         return {
             "history": history,
             "best_epoch": best_epoch,
             "best_val_metrics": {key: history["val"][key][best_epoch] for key in history["val"]},
+        }
+
+@dataclass
+class TrainingConfig:
+    """
+    Configuration class for model training, covering all key aspects including model construction,
+    optimization, class balancing, training control, and evaluation.
+
+    Attributes:
+        model_builder (Callable[[Dict[str, Any]], nn.Module]):
+            Function that constructs the model for each fold during cross-validation in the training function.
+
+        optimizer_builder (Callable):
+            Function that creates the optimizer instance for each fold in the training function.
+
+        fold_seeds (List[int]):
+            Random seeds used for each fold in cross-validation. The number of folds is determined by the length of this list.
+
+        shuffle (bool):
+            Whether to shuffle the training data before each epoch. Default is True.
+
+        early_stopping (Union[bool, EarlyStopping]):
+            Enables early stopping based on the validation performance. Can be set to a boolean or an EarlyStopping instance.
+
+        patience (Optional[int]):
+            Number of epochs with no improvement in the main metric before training is stopped (used with early stopping).
+
+        main_metric (str):
+            Primary validation metric used for:
+              - Early stopping (monitored for improvements),
+              - Selecting the best model per fold,
+              - Averaging metrics across folds.
+            The final reported results per fold come from the epoch with the best value of this metric disregarding that the 
+            other metrics might have a better value in another epoch.
+            Options include: "loss", "acc", "precision", "recall", "f1".
+
+        balancing_strategy (Union[str, BalancingStrategy]):
+            Strategy used to handle class imbalance:
+              - "no_balancing": Standard `CrossEntropyLoss` without any weighting (default).
+              - "weighted_loss": `CrossEntropyLoss` with manually specified class weights.
+              - "oversampling": Use `WeightedRandomSampler` to oversample minority classes. Requires `class_weights`.
+
+        class_weights (Optional[Dict[int, float]]):
+            Dictionary specifying the weight for each class. Required for "weighted_loss" and "oversampling".
+            Minor classes should be assigned higher weights. For example, for class distribution {0: 0.1, 1: 0.9},
+            weights should be inverted: {0: 1/0.1 = 10.0, 1: 1/0.9 ≈ 1.11}.
+            Normalization to sum to 1.0 is optional but not necessary.
+
+        device (Union[str, torch.device]):
+            Computation device to use for training (e.g., "cuda" or "cpu"). Default is "cuda".
+    """
+    # Required config parameters
+    model_builder: Callable[[Dict[str, Any]], nn.Module] 
+    optimizer_builder: Callable
+    fold_seeds: List[int] 
+
+    # General training behavior
+    shuffle: bool = True
+    early_stopping: Union[bool, EarlyStopping] = False 
+    patience: Optional[int] = None 
+    main_metric: str = "loss" 
+    balancing_strategy: Union[str, BalancingStrategy] = "no_balancing" 
+    class_weights: Optional[Dict[int, float]] = None 
+    device: Union[str, torch.device] = "cuda"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Converts the TrainingConfig instance to a dictionary.
+        
+        Returns:
+            Dict[str, Any]: Dictionary representation of the TrainingConfig.
+        """
+        return {
+            "model_builder": self.model_builder,
+            "optimizer_builder": self.optimizer_builder,
+            "fold_seeds": self.fold_seeds,
+            "shuffle": self.shuffle,
+            "early_stopping": self.early_stopping,
+            "patience": self.patience,
+            "main_metric": self.main_metric,
+            "balancing_strategy": self.balancing_strategy,
+            "class_weights": self.class_weights,
+            "device": self.device
         }
 
 class ModelEvaluator:
@@ -508,12 +765,25 @@ class ModelEvaluator:
         self, 
         dataset: Dataset, 
         trainer: ModelTrainer, 
-        data_splitter: SplitStrategy
+        trainer_cfg: Dict[str, Any],
+        data_splitter: SplitStrategy,
+        transforms: Dict[str, Callable]
     ) -> None:
         self.dataset = dataset
         self.trainer = trainer
         self.splitter = data_splitter
         self.log_path: Optional[Path] = None
+        self.transforms = transforms
+        self.fold_seeds = trainer_cfg.get("fold_seeds", None)
+        self._check_fold_seeds()
+        
+    def _check_fold_seeds(self):
+        if self.fold_seeds is None:
+            raise ValueError("Fold seeds must be provided in the trainer configuration.")
+        if not isinstance(self.fold_seeds, list):
+            raise TypeError("Fold seeds must be a list of integers.")
+        if len(self.fold_seeds) != self.splitter.k:
+            raise ValueError(f"Number of fold seeds ({len(self.fold_seeds)}) does not match the number of folds ({self.splitter.k}).")
 
     def set_log_path(self, log_path: Union[str, Path]) -> None:
         if not isinstance(log_path, (str, Path)):
@@ -527,7 +797,14 @@ class ModelEvaluator:
         fold_results = []
         
         for fold_idx, (train_indices, val_indices) in enumerate(self.splitter.get_splits(self.dataset)):
-            train_data, val_data = Subset(self.dataset, train_indices), Subset(self.dataset, val_indices)
+            set_seed(self.fold_seeds[fold_idx])
+            config["used_seed"] = self.fold_seeds[fold_idx]
+
+            train_data = TransformSubset(self.dataset, train_indices, self.transforms["train"])
+            val_data = TransformSubset(self.dataset, val_indices, self.transforms["val"])
+            
+            # testing
+            # debug_visualize_transform(train_data, config)
             
             try:
                 if self.log_path:
@@ -544,8 +821,10 @@ class ModelEvaluator:
                 print(f"Error during training fold {fold_idx}: {e}")
         
         if self.log_path:
-            logger = TensorBoardLogger(self.log_path)
-            
+            hparam_log_path = self.log_path / "hparams_summary"
+            hparam_log_path.mkdir(parents=True, exist_ok=True)
+            logger = TensorBoardLogger(hparam_log_path)
+                    
             all_keys = fold_results[0].keys()
             mean_metrics = {
                 key: float(np.mean([fold[key] for fold in fold_results])) for key in all_keys
@@ -553,14 +832,29 @@ class ModelEvaluator:
             std_metrics = {
                 key: float(np.std([fold[key] for fold in fold_results])) for key in all_keys
             }
-            
+
             hparams = {k: config[k] for k in config if isinstance(config[k], (int, float, str))}
+
             final_metrics = {f"mean_{k}": mean_metrics[k] for k in mean_metrics}
             final_metrics.update({f"std_{k}": std_metrics[k] for k in std_metrics})
-
-            logger.log_hparams(hparam_dict=hparams, metric_dict=final_metrics)
-            logger.close()
             
+            try:
+                hparams_csv_path = self.log_path / "hparams_summary.csv"
+                with open(hparams_csv_path, "w") as f:
+                    # Header
+                    headers = list(hparams.keys()) + list(final_metrics.keys())
+                    f.write(",".join(headers) + "\n")
+
+                    # Werte
+                    values = [str(hparams[k]) for k in hparams] + [f"{final_metrics[k]:.4f}" for k in final_metrics]
+                    f.write(",".join(values) + "\n")
+            except Exception as e:
+                print(f"Error saving hyperparameters to CSV: {e}")
+                
+            
+            logger.log_hparams(hparams=hparams, metrics=final_metrics)
+            logger.close()
+
             return mean_metrics[self.trainer.main_metric], std_metrics[self.trainer.main_metric]
         else:
             return float(np.mean(scores)), float(np.std(scores))
@@ -601,11 +895,42 @@ class GridSearch(SearchStrategy):
         configs = []
         
         for cfg in raw_combinations:
-            if cfg["optim"] != "SGD" and "momentum" in cfg and cfg["momentum"] != 0.0:
+            if cfg.get("optim") != "SGD" and "momentum" in cfg and cfg["momentum"] != 0.0:
                 continue
-            if cfg["scheduler"] == "none" and any(k in cfg for k in ["scheduler_step_size", "scheduler_gamma"]):
-                continue
-            configs.append(cfg)
+            
+            scheduler = cfg.get("lr_scheduler", "none")
+
+            # Entferne unnötige scheduler-Parameter je nach Scheduler-Typ
+            cfg_copy = dict(cfg)  # mache Kopie, um Original nicht zu verändern
+
+            if scheduler == "none":
+                # Remove all scheduler params
+                for key in ["scheduler_step_size", "scheduler_gamma", "scheduler_t_max"]:
+                    cfg.pop(key, None)
+                # Add defaults (optional if downstream expects keys)
+                cfg["scheduler_step_size"] = 0
+                cfg["scheduler_gamma"] = 0
+                cfg["scheduler_t_max"] = 0
+
+            elif scheduler == "step":
+                # Remove unused param
+                cfg.pop("scheduler_t_max", None)
+                # Ensure required ones exist
+                cfg["scheduler_step_size"] = cfg.get("scheduler_step_size", 0)
+                cfg["scheduler_gamma"] = cfg.get("scheduler_gamma", 0)
+                cfg["scheduler_t_max"] = 0
+
+            elif scheduler == "cosine":
+                cfg.pop("scheduler_step_size", None)
+                cfg.pop("scheduler_gamma", None)
+                cfg["scheduler_t_max"] = cfg.get("scheduler_t_max", 0)
+                cfg["scheduler_step_size"] = 0
+                cfg["scheduler_gamma"] = 0
+
+            else:
+                raise ValueError(f"Unbekannter lr_scheduler: {scheduler}")
+
+            configs.append(cfg_copy)
 
         return configs
 
@@ -637,6 +962,10 @@ class GridSearch(SearchStrategy):
         best_config = None
 
         for config in self._generate_grid():
+            print(config)
+        print(len(self._generate_grid()), "configurations found in search space.")
+
+        for config in self._generate_grid():
             log_path = self._get_config_log_path(config)
             if log_path:
                 self.model_validator.set_log_path(log_path)
@@ -652,6 +981,34 @@ class GridSearch(SearchStrategy):
     def evaluate_config(self, config):
         return self.model_validator.run(config)
 
+@dataclass
+class SearchSpaceConfig:
+    # Each of these field must be a list of at least one element or there will be an error
+    batch_size: List[int] # Batch size for training
+    optim: List[str] # Optimizer to use, e.g., ["Adam", "SGD"]
+    learning_rate: List[float] # Learning rate for the optimizer, e.g., [0.001, 0.0001]
+    epochs: List[int] = field(default_factory=lambda: [200]) # Number of epochs to train, e.g., [30]
+    model_name: List[str] = field(default_factory=lambda: ["resnet18"]) # Model architecture, e.g., ["resnet18"]
+    pretrained: List[bool] = field(default_factory=lambda: [False]) # Whether to use pretrained weights, e.g., [False]
+    num_classes: List[int] = field(default_factory=lambda: [2]) # Number of classes in the dataset, e.g., [2] for binary classification
+
+    # Optional scheduler-related
+    lr_scheduler: List[str] = field(default_factory=lambda: ["none"])
+    scheduler_step_size: Optional[List[int]] = None # will only be used if lr_scheduler is "step"
+    scheduler_gamma: Optional[List[float]] = None # will only be used if lr_scheduler is "step"
+    scheduler_t_max: Optional[List[int]] = None # will only be used if lr_scheduler is "cosine"
+    momentum: Optional[List[float]] = None  # will only be used if optim is "SGD"
+
+    def to_grid_dict(self) -> Dict[str, List[Any]]:
+        """
+        Converts the dataclass into a parameter grid dictionary suitable for sklearn's ParameterGrid.
+        Skips None values.
+        """
+        grid = {}
+        for k, v in self.__dict__.items():
+            if v is not None:
+                grid[k] = v
+        return grid
 
 # ========== Experiment Class ==========
 class Experiment:
@@ -662,6 +1019,7 @@ class Experiment:
         search_space: Dict[str, List[Any]],
         trainer_cfg: Dict[str, Any],
         split_strategy: SplitStrategy,
+        transforms: Dict[str, Callable],
         log_base_path: Optional[Union[str, Path]] = None,
     ) -> None:
         self.dataset = dataset
@@ -670,8 +1028,28 @@ class Experiment:
         self.trainer_cfg = trainer_cfg
         self.split_strategy = split_strategy
         self.log_base_path = Path(log_base_path).resolve() if log_base_path else None
+        self.transforms = transforms
+
+    def _save_configs(self, search_space: Dict[str, List[Any]], train_cfg: Dict[str, Any]) -> None:
+        """
+        Saves the search space and training configuration to a YAML file in the specified log path.
+        
+        Args:
+            search_space (Dict[str, List[Any]]): The search space dictionary.
+            train_cfg (Dict[str, Any]): The training configuration dictionary.
+        """
+        config = {
+            "search_space": search_space,
+            "trainer_config": train_cfg
+        }
+        config_path = self.log_base_path / "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(config, f)
 
     def run(self) -> Tuple[Dict[str, Any], float, float]:
+        self.log_base_path.mkdir(parents=True, exist_ok=True) if self.log_base_path else None
+        self._save_configs(self.search_space, self.trainer_cfg)
+        
         # Setup Trainer
         trainer = ModelTrainer(
             **self.trainer_cfg,
@@ -681,7 +1059,9 @@ class Experiment:
         model_validator = ModelEvaluator(
             dataset=self.dataset,
             trainer=trainer,
-            data_splitter=self.split_strategy
+            trainer_cfg=self.trainer_cfg,
+            transforms = self.transforms,
+            data_splitter=self.split_strategy,
         )
 
         # Setup SearchStrategy
@@ -692,51 +1072,65 @@ class Experiment:
         )
 
         return strategy.search()
-    
-    
-    
+
 if __name__ == "__main__":
-    # Generell müssen die Seeds noch irgendwo gesetzt werden, damit in jedem Fold? der Seed geändert wird oder so (oder random?) es muss auf jeden fall eine lösung dafür gefunden werden, dass die Ergebnisse repoduierbar sind
+    # Search Space Definition
+    search_space = SearchSpaceConfig(
+        batch_size=[32],
+        optim=["Adam", "SGD"],
+        learning_rate=[0.01, 0.05, 0.001, 0.0005, 0.0001],
+        epochs=[200],
+        lr_scheduler=["step", "cosine", "none"],
+        scheduler_step_size=[5],
+        scheduler_gamma=[0.5],
+        scheduler_t_max=[50],
+        momentum=[0.9, 0.8, 0.0]
+    ).to_grid_dict()
     
-    # !!!! nicht so viele auf einmal zu beginn
-    search_space = {
-        "batch_size": [16, 32],
-        "epochs": [30],
-        "model_name": ["resnet18"],
-        "optim": ["Adam", "SGD"],
-        "lr_scheduler": ["step", "cosine", "none"],
-        "scheduler_step_size": [10],
-        "scheduler_gamma": [0.1],
-        "scheduler_t_max": [30],
+    # search_space = SearchSpaceConfig(
+    #     batch_size=[32, 64],  # neu: 16, 64
+    #     optim=["Adam", "SGD"],    # bleibt gleich
+    #     learning_rate=[0.01, 0.001, 0.0001],  # etwas fokussierter als vorher
+    #     epochs=[200],  # testweise kürzer bei EarlyStopping
+    #     lr_scheduler=["none", "cosine"],  # neu: "cosine" hinzufügen
+    #     scheduler_t_max=[50],  # für "cosine"
+    #     momentum=[0.0, 0.8, 0.9]  # neu: auch 0.8 testen bei SGD
+    # ).to_grid_dict()
+    
+    
+    # Split Strategy Definition
+    split_strategy = KFoldSplit(k=3)
+    
+    # Training Configuration
+    class_weights = {0: 0.5744292237442923, 1: 0.42557077625570777}  # 0: no_pain, 1: pain
+    class_weights = {k: 1 / v for k, v in class_weights.items()}  # Invert weights for CrossEntropyLoss
+    class_weights = {k: v / sum(class_weights.values()) for k, v in class_weights.items()}  # Normalize to sum to 1.0
+    print(f"Class weights: {class_weights}")
+    trainer_config = TrainingConfig(
+        model_builder=get_model,  # Funktion zum Erstellen des Modells
+        optimizer_builder=get_optimizer,  # Funktion zum Erstellen des Optimizers
+        fold_seeds=[42, 43, 44],  # Folds für K-Fold Cross-Validation
+        shuffle=True,
+        early_stopping=True,
+        patience=30,
+        main_metric="loss",
+        balancing_strategy="weighted_loss",  # oder "oversampling" oder "no_balancing"
+        class_weights=class_weights,  # darf nicht None sein, wenn balancing_strategy != "no_balancing"
+        device="cuda" if torch.cuda.is_available() else "cpu"
+    ).to_dict()
+    
+    # Dataset Definition
+    dataset_path = Path(r"C:\Users\Freun\Desktop\htcv_mgs\data\MGS_data")  # Struktur: data/ & labels/labels.csv
+    dataset = ImageCSVDataset(data_dir=dataset_path)
+    transform = {
+        "train": get_train_transforms(mean = 0.36995071172714233, std = 0.21818380057811737),  # Funktion zum Erstellen der Trainings-Transforms
+        "val": get_val_transforms(mean = 0.36995071172714233, std = 0.21818380057811737)  # Funktion zum Erstellen der Validierungs-Transforms
     }
-
-    # 2. Trainer-Konfiguration definieren
-    # !!!! geht dass, dass man hier model_builder und optimizier_builder so übergibt mit und *train_config alles richtig für die initialisierung von ModelTrainer übergeben wird oder müssen die callables explizit definiert werden?
-    # !!!! get_model muss daran angepasst werden eine config zu erhalten
-    # !!!! optimizer_builder muss noch geschrieben werden
-    trainer_config = {
-        "model_builder": get_model,
-        "optimizer_builder": Callable, 
-        "shuffle": True,
-        "early_stopping": True,
-        "patience": 7,
-        "main_metric": "f1",
-        "balancing_strategy": "weighted_loss",  # oder "no_balancing", "oversampling"
-        "device": "cuda",
-        "class_weights": {0: 0.5, 1: 0.5},  # oder None wenn nicht benötigt
-    }
-
-    # 3. Dataset vorbereiten
-    # !!!! Trainings und Validierungstransforms müssen eigentlich in den model validator oder so und dort an die subsets übergeben werden oder so
-    dataset_path = Path("path/to/dataset/train")  # Struktur: data/ & labels/labels.csv
-    dataset = ImageCSVDataset(data_dir=dataset_path, transform=)
-
-
-    # 5. Splitstrategie auswählen
-    split_strategy = KFoldSplit(k=5, seed=42)
-
+    
+    
+    
     # 6. Loggingpfad setzen
-    log_base_path = Path("logs/gridsearch_run")
+    log_base_path = Path(r"C:\Users\Freun\Desktop\htcv_mgs\results\run5")
 
     # 7. Experiment starten
     experiment = Experiment(
@@ -744,13 +1138,13 @@ if __name__ == "__main__":
         search_strategy_cls=GridSearch,
         search_space=search_space,
         trainer_cfg=trainer_config,
-        transforms=transforms,
+        transforms= transform,
         split_strategy=split_strategy,
         log_base_path=log_base_path
     )
 
-    if __name__ == "__main__":
-        best_config, best_mean, best_std = experiment.run()
-        print("✅ Best configuration found:")
-        print(best_config)
-        print(f"Mean score: {best_mean:.4f} ± {best_std:.4f}")
+    
+    best_config, best_mean, best_std = experiment.run()
+    print("✅ Best configuration found:")
+    print(best_config)
+    print(f"Mean score: {best_mean:.4f} ± {best_std:.4f}")
