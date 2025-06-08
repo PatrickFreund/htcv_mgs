@@ -11,7 +11,7 @@ import torch.utils.data as data
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import ParameterGrid
 
-from utils.EarlyStopping import EarlyStopping
+from old_scripts.training.EarlyStopping import EarlyStopping
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.model import get_model

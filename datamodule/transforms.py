@@ -126,7 +126,7 @@ class RotateCrop:
 # ------------------------------------------------------------------
 
 def get_train_transforms(
-    output_size=(128, 128), 
+    output_size=(224, 224), 
     flip_prob=0.5, 
     angle_range=(0, 7), 
     mean=0.5, 
@@ -134,17 +134,17 @@ def get_train_transforms(
 ):
     return transforms.Compose([
         RotateCrop(angle_range=angle_range, flip_prob=flip_prob),
-        transforms.Resize(output_size, antialias=True),
+        transforms.Resize(output_size, interpolation=transforms.InterpolationMode.NEAREST),
         transforms.ToTensor(),
         transforms.Normalize(mean=[mean], std=[std])
     ])
 
-def get_val_transforms(output_size=(128, 128), mean=0.5, std=0.5):
+def get_val_transforms(output_size=(224, 224), mean=0.5, std=0.5):
     """
     Get a custom transform function for validation. Preprossesing only.
     """
     return transforms.Compose([
-        transforms.Resize(output_size, antialias=True),
+        transforms.Resize(output_size, interpolation=transforms.InterpolationMode.NEAREST),
         transforms.ToTensor(),
         transforms.Normalize(mean=[mean], std=[std])
     ])

@@ -1,3 +1,4 @@
+from typing import Callable, Tuple, List
 import pandas as pd
 from pathlib import Path
 import torch
@@ -34,14 +35,11 @@ class ImageCSVDataset(Dataset):
     Returns:
         A tuple (image, label) for each sample in the dataset.
     """
-    def __init__(self, data_dir: Path, transform: transforms = None):
+    def __init__(self, data_dir: Path):
         self.data_dir = data_dir
-        self.img_dir = Path(data_dir) / "data" # Assuming images are in a subfolder named 'data'
-        self.labels = pd.read_csv(Path(data_dir) / "labels" / "labels.csv") # Assuming labels are in a subfolder named 'labels'
+        self.img_dir = Path(data_dir) / "data"
+        self.labels = pd.read_csv(Path(data_dir) / "labels" / "labels.csv")
         self.delete_missing_images_from_labels()
-        self.transform = transform
-        if self.transform is None:
-            self.transform = transforms.ToTensor()
 
     def __len__(self):
         return len(self.labels)
@@ -49,31 +47,24 @@ class ImageCSVDataset(Dataset):
     def __getitem__(self, index: int):
         row = self.labels.iloc[index]
         img_name = row["filename"]
-        img_stem = img_name.split(".")[0] 
-        label = int(row["label"]) 
-        
-        # Check for the image with the same stem but maybe different extension
-        possible_files = list(self.img_dir.glob(f"{img_stem}.*")) 
+        img_stem = img_name.split(".")[0]
+        label = int(row["label"])
+
+        possible_files = list(self.img_dir.glob(f"{img_stem}.*"))
         if len(possible_files) == 0:
             raise FileNotFoundError(f"No image found for {img_name} in {self.img_dir}.")
         
-        img_name = possible_files[0]        
-        img_path = self.img_dir / img_name
-        
-        img = Image.open(img_path).convert("RGB")
-        img = self.transform(img)
+        img_path = possible_files[0]
+        img = Image.open(img_path).convert("L")  # Grayscale
 
         return img, label
 
     def delete_missing_images_from_labels(self):
-        """
-        Deletes rows from the labels DataFrame where the corresponding image file does not exist.
-        """
         missing_files = []
         for index, row in self.labels.iterrows():
             img_name = row["filename"]
-            img_stem = img_name.split(".")[0] 
-            possible_files = list(self.img_dir.glob(f"{img_stem}.*")) 
+            img_stem = img_name.split(".")[0]
+            possible_files = list(self.img_dir.glob(f"{img_stem}.*"))
             if len(possible_files) == 0:
                 missing_files.append(index)
 
@@ -81,7 +72,23 @@ class ImageCSVDataset(Dataset):
         self.labels.reset_index(drop=True, inplace=True)
         print(f"Deleted {len(missing_files)} missing images from labels.")
 
-def get_dataset(data_foldername: str, transform:transforms) -> ImageCSVDataset:
+class TransformSubset(Dataset):
+    def __init__(self, base_dataset: Dataset, indices: List[int], transform: Callable = None):
+        self.base_dataset = base_dataset
+        self.indices = indices
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.indices)
+
+    def __getitem__(self, idx):
+        img, label = self.base_dataset[self.indices[idx]]
+        if self.transform:
+            img = self.transform(img)
+        return img, label
+
+
+def get_dataset(data_foldername: str) -> ImageCSVDataset:
     """
     Load dataset corresponding to the specified folder name in the data directory that follows the structure 
     described in the ImageCSVDataset class.
@@ -97,9 +104,8 @@ def get_dataset(data_foldername: str, transform:transforms) -> ImageCSVDataset:
     if not data_dir.exists():
         raise FileNotFoundError(f"Data directory {data_dir} does not exist.")
 
-    dataset = ImageCSVDataset(data_dir = data_dir, transform = transform) 
+    dataset = ImageCSVDataset(data_dir = data_dir) 
     return dataset
-
 
 def split_dataset(dataset, save_dir: Path, train_ratio=0.8, seed=42):
     """
@@ -132,14 +138,3 @@ def split_dataset(dataset, save_dir: Path, train_ratio=0.8, seed=42):
     return train_subset, test_subset
 
 
-
-if __name__ == "__main__":
-    # Example usage
-    data_foldername = "MGS_data"
-    dataset = get_dataset(data_foldername, transform=None)
-    from torch.utils.data import DataLoader
-    print(f"Number of samples in {data_foldername} dataset: {len(dataset)}")
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
-    
-    for images, labels in dataloader:
-        print(images.shape, labels.shape, labels)
