@@ -1,0 +1,56 @@
+time_code,time_text,pain,dataset
+a,"1. Baseline Aufnahme, 2. Baseline Aufnahme",0,awolt
+b,"3. Aufnahme, 12h post Anästhesie",0,awolt
+c,"4. Aufnahme, 24h post Anästhesie",0,awolt
+d,"5. Aufnahme, 48h post Anästhesie",0,awolt
+e,"6. Aufnahme, 72h post Anästhesie",0,awolt
+f,"7. Aufnahme, 12h post Osteotomie",0,awolt
+g,"8. Aufnahme, 24h post Osteotomie",-,awolt
+h,"9. Aufnahme, 48h post Osteotomie",0,awolt
+I,"10. Aufnahme, 72h post Osteotomie",0,awolt
+a,baseline,0,mriec
+b,1h post treatment,0,mriec
+c,2h post treatment,-,mriec
+d,4h post treatment,1,mriec
+e,8h post treatment,1,mriec
+f,24h post treatment,-,mriec
+a,"control, exposure 0",0,lwitt
+b,"control, exposure 1",0,lwitt
+c,"control, exposure 2",0,lwitt
+d,"control, exposure 3",0,lwitt
+e,"control, exposure 4",0,lwitt
+f,"new, exposure 0",0,lwitt
+g,"new, exposure 1",-,lwitt
+h,"new, exposure 2",0,lwitt
+I,"new, exposure 3",1,lwitt
+j,"new, exposure 4",0,lwitt
+k,conv exposure 0,0,lwitt
+l,conv exposure 1,0,lwitt
+m,conv exposure 2,0,lwitt
+n,conv exposure 3,0,lwitt
+o,conv exposure 4,0,lwitt
+a,prior to surgery,-,jwilz
+b,30 min post surgery,1,jwilz
+c,4h post surgery,-,jwilz
+d,24h post surgery,-,jwilz
+e,"day 4 post surgery, prior blood sampling",-,jwilz
+f,"day 4 post surgery, post blood sampling",1,jwilz
+g,day 7 after surgery,-,jwilz
+a,baseline,0,khcas
+b,30 min,1,khcas
+c,150 min,-,khcas
+d,300 min,-,khcas
+e,same day,-,khcas
+f,1 day post,0,khcas
+g,2 days post,0,khcas
+h,3 days post,0,khcas
+a,baseline,0,khkxn
+b,30 min,1,khkxn
+c,150 min,1,khkxn
+e,same day,1,khkxn
+g,2 days post,0,khkxn
+j,9 days post,0,khkxn
+a,baseline,0,khiso
+b,30 min,1,khiso
+c,150 min,0,khiso
+e,same day,-,khiso
