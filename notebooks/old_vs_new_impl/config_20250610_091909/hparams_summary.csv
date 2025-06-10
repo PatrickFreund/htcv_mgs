@@ -1,0 +1,2 @@
+batch_size,epochs,learning_rate,lr_scheduler,model_name,momentum,num_classes,optim,pretrained,scheduler_t_max,used_seed,mean_loss,mean_acc,mean_f1,mean_precision,mean_recall,std_loss,std_acc,std_f1,std_precision,std_recall
+32,10,0.001,cosine,resnet18,0.8,2,SGD,False,50,43,0.5524,0.7419,0.7429,0.7496,0.7419,0.0193,0.0123,0.0116,0.0054,0.0123
