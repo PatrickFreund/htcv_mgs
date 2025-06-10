@@ -18,7 +18,8 @@ from torch.utils.data import DataLoader, Dataset, Subset
 from torch.utils.tensorboard import SummaryWriter
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from utils.model import get_model, get_optimizer
+from utils.model import get_model
+from utils.optimizer import get_optimizer
 from datamodule.dataset import ImageCSVDataset, TransformSubset
 from datamodule.transforms import get_train_transforms, get_val_transforms
 
@@ -903,6 +904,10 @@ class GridSearch(SearchStrategy):
             # Entferne unnötige scheduler-Parameter je nach Scheduler-Typ
             cfg_copy = dict(cfg)  # mache Kopie, um Original nicht zu verändern
 
+            # # Muss wieder entfernt werden !!!!!!!!!!!!!!!
+            # if scheduler == "step" and cfg.get("learning_rate") == 0.001:
+            #     continue
+            
             if scheduler == "none":
                 # Remove all scheduler params
                 for key in ["scheduler_step_size", "scheduler_gamma", "scheduler_t_max"]:
@@ -942,9 +947,9 @@ class GridSearch(SearchStrategy):
         config_dir.mkdir(parents=True, exist_ok=True)
 
         # YAML speichern
-        config_yaml_path = config_dir / "config.yaml"
-        with open(config_yaml_path, "w") as f:
-            yaml.dump(self._sanitize_config(config), f)
+        # config_yaml_path = config_dir / "config.yaml"
+        # with open(config_yaml_path, "w") as f:
+        #     yaml.dump(self._sanitize_config(config), f)
 
         return config_dir
 
@@ -1075,31 +1080,31 @@ class Experiment:
 
 if __name__ == "__main__":
     # Search Space Definition
+    # search_space = SearchSpaceConfig(
+    #     batch_size=[32],
+    #     optim=["Adam", "SGD"],
+    #     learning_rate=[0.01, 0.05, 0.001, 0.0005, 0.0001],
+    #     epochs=[200],
+    #     lr_scheduler=["step", "cosine", "none"],
+    #     scheduler_step_size=[5],
+    #     scheduler_gamma=[0.5],
+    #     scheduler_t_max=[50],
+    #     momentum=[0.9, 0.8, 0.0]
+    # ).to_grid_dict()
+    
     search_space = SearchSpaceConfig(
         batch_size=[32],
-        optim=["Adam", "SGD"],
-        learning_rate=[0.01, 0.05, 0.001, 0.0005, 0.0001],
-        epochs=[200],
-        lr_scheduler=["step", "cosine", "none"],
-        scheduler_step_size=[5],
-        scheduler_gamma=[0.5],
+        optim=["SGD"],
+        learning_rate=[0.001],
+        epochs=[10],
+        lr_scheduler=["cosine"],
         scheduler_t_max=[50],
-        momentum=[0.9, 0.8, 0.0]
+        momentum=[0.8]
     ).to_grid_dict()
-    
-    # search_space = SearchSpaceConfig(
-    #     batch_size=[32, 64],  # neu: 16, 64
-    #     optim=["Adam", "SGD"],    # bleibt gleich
-    #     learning_rate=[0.01, 0.001, 0.0001],  # etwas fokussierter als vorher
-    #     epochs=[200],  # testweise kürzer bei EarlyStopping
-    #     lr_scheduler=["none", "cosine"],  # neu: "cosine" hinzufügen
-    #     scheduler_t_max=[50],  # für "cosine"
-    #     momentum=[0.0, 0.8, 0.9]  # neu: auch 0.8 testen bei SGD
-    # ).to_grid_dict()
     
     
     # Split Strategy Definition
-    split_strategy = KFoldSplit(k=3)
+    split_strategy = KFoldSplit(k=2)
     
     # Training Configuration
     class_weights = {0: 0.5744292237442923, 1: 0.42557077625570777}  # 0: no_pain, 1: pain
@@ -1109,8 +1114,8 @@ if __name__ == "__main__":
     trainer_config = TrainingConfig(
         model_builder=get_model,  # Funktion zum Erstellen des Modells
         optimizer_builder=get_optimizer,  # Funktion zum Erstellen des Optimizers
-        fold_seeds=[42, 43, 44],  # Folds für K-Fold Cross-Validation
-        shuffle=True,
+        fold_seeds=[42, 43],  # Folds für K-Fold Cross-Validation
+        shuffle=False,
         early_stopping=True,
         patience=30,
         main_metric="loss",
@@ -1130,7 +1135,7 @@ if __name__ == "__main__":
     
     
     # 6. Loggingpfad setzen
-    log_base_path = Path(r"C:\Users\Freun\Desktop\htcv_mgs\results\run5")
+    log_base_path = Path(r"C:\Users\Freun\Desktop\htcv_mgs\results\run_2")
 
     # 7. Experiment starten
     experiment = Experiment(

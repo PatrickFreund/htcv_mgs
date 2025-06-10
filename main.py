@@ -51,7 +51,7 @@ if __name__ == "__main__":
     ).to_dict()
     
     # 3. Prepare the dataset
-    data_dir = Path(__file__).resolve().parent.parent / "data" / "MGS_data"
+    data_dir = Path(__file__).resolve().parent / "data" / "MGS_data"
     dataset = ImageCSVDataset(data_dir = data_dir)
     transform = {
         "train": get_train_transforms(mean = DATASET_MEAN, std = DATASET_STD), 
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     search_strategy_cls = GridSearch
     
     # 4. Set path for loggin if wished 
-    log_dir = Path(__file__).resolve().parent.parent / "results"
+    log_dir = Path(__file__).resolve().parent / "results"
     run_number = len(list(Path.glob(log_dir, "run_*"))) + 1
     log_dir = log_dir / f"run_{run_number}"
     

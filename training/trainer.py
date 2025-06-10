@@ -1,17 +1,18 @@
+import sys
 from pathlib import Path
 from typing import Callable, Dict, Any, Optional, Union, Tuple
 
 import torch
 from torch import nn
-from torch.nn import _Loss
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader, Dataset
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-from balacing import (
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from training.balancing import (
     BalancingStrategy, NoBalancingStrategy, WeightedLossBalancing, OversamplingBalancing
 )
-from logger import TensorBoardLogger
+from training.logger import TensorBoardLogger
 
 
 class EarlyStopping:
@@ -19,7 +20,7 @@ class EarlyStopping:
         self.patience = patience
         self.mode = mode
         self.counter = 0
-        self.best_metric: float
+        self.best_metric: float = None
     
     def __call__(self, metric: float) -> bool:
         if self.best_metric is None:
@@ -162,7 +163,7 @@ class ModelTrainer:
         model: torch.nn.Module,
         train_loader: DataLoader,
         optimizer: torch.optim.Optimizer,
-        criterion: _Loss,
+        criterion,
         scheduler: Optional[_LRScheduler] = None,
     ) -> Dict[str, float]:
         model.train()
@@ -200,7 +201,7 @@ class ModelTrainer:
         self,
         model: nn.Module,
         val_loader: DataLoader,
-        criterion: _Loss
+        criterion
     ) -> Dict[str, float]:
         model.eval()
         total_loss = 0.0

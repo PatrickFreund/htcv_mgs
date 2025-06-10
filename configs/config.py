@@ -1,5 +1,15 @@
+import sys
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Any, List, Optional, Union
+
+import torch
+from torch import nn as nn
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from training.trainer import EarlyStopping
+from training.balancing import BalancingStrategy
+
 
 
 @dataclass
