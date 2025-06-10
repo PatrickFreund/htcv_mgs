@@ -20,6 +20,25 @@ import json
 # Augmentation Utility Functions
 # ------------------------------------------------------------------
 
+def crop_to_max_square_and_resize(image):
+    """
+    Crop the largest possible square from the center of the image,
+    """
+    if isinstance(image, np.ndarray):
+        image = Image.fromarray(image)
+
+    width, height = image.size
+    min_side = min(width, height)
+
+    center_x, center_y = width // 2, height // 2
+
+    left = center_x - min_side // 2
+    top = center_y - min_side // 2
+    right = left + min_side
+    bottom = top + min_side
+
+    return image.crop((left, top, right, bottom))
+
 def get_max_inscribed_rect(width, height, angle_degrees):
     """
     Calculate the maximum inscribed rectangle for a rotated image.
@@ -121,6 +140,13 @@ class RotateCrop:
         image = apply_rotation_crop(image, angle_range=(angle_degrees, angle_degrees))
         return image
 
+class CenterCrop:
+    def __call__(self, image):
+        if isinstance(image, np.ndarray):
+            image = Image.fromarray(image)
+        return crop_to_max_square_and_resize(image)
+
+
 # ------------------------------------------------------------------
 # Transform Functions
 # ------------------------------------------------------------------
@@ -144,6 +170,7 @@ def get_val_transforms(output_size=(224, 224), mean=0.5, std=0.5):
     Get a custom transform function for validation. Preprossesing only.
     """
     return transforms.Compose([
+        CenterCrop(),
         transforms.Resize(output_size, interpolation=transforms.InterpolationMode.NEAREST),
         transforms.ToTensor(),
         transforms.Normalize(mean=[mean], std=[std])
