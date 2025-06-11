@@ -1128,10 +1128,9 @@ if __name__ == "__main__":
     dataset_path = Path(r"C:\Users\Freun\Desktop\htcv_mgs\data\MGS_data")  # Struktur: data/ & labels/labels.csv
     dataset = ImageCSVDataset(data_dir=dataset_path)
     transform = {
-        "train": get_train_transforms(mean = 0.36995071172714233, std = 0.21818380057811737),  # Funktion zum Erstellen der Trainings-Transforms
-        "val": get_val_transforms(mean = 0.36995071172714233, std = 0.21818380057811737)  # Funktion zum Erstellen der Validierungs-Transforms
+        "train": get_train_transforms(mean = 0.37203550954887965, std = 0.21801310757916936),  # Funktion zum Erstellen der Trainings-Transforms
+        "val": get_val_transforms(mean = 0.37203550954887965, std = 0.21801310757916936)  # Funktion zum Erstellen der Validierungs-Transforms
     }
-    
     
     
     # 6. Loggingpfad setzen

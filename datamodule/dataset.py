@@ -1,11 +1,9 @@
-from typing import Callable, Tuple, List
+from typing import Callable, List
 import pandas as pd
 from pathlib import Path
 import torch
 from PIL import Image
-from torchvision import transforms
 from torch.utils.data import Dataset
-
 
 class ImageCSVDataset(Dataset):
     """

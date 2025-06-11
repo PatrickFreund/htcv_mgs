@@ -15,8 +15,8 @@ from datamodule.splitter import KFoldSplit, RandomSplit
 
 # Konstants
 CLASS_WEIGHTS = {0: 0.5744292237442923, 1: 0.42557077625570777}
-DATASET_MEAN = 0.36995071172714233
-DATASET_STD = 0.21818380057811737
+DATASET_MEAN = 0.37203550954887965
+DATASET_STD = 0.21801310757916936
 
 
 if __name__ == "__main__":
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     search_space = SearchSpaceConfig(
         batch_size=[32],
         optim=["Adam", "SGD"],
-        learning_rate=[0.01, 0.05, 0.001, 0.0005, 0.0001],
+        learning_rate=[0.0001],
         epochs=[200],
         lr_scheduler=["step", "cosine", "none"],
         scheduler_step_size=[5],
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     search_strategy_cls = GridSearch
     
     # 4. Set path for loggin if wished 
-    log_dir = Path(__file__).resolve().parent / "results"
+    log_dir = Path(__file__).resolve().parent / "results" 
     run_number = len(list(Path.glob(log_dir, "run_*"))) + 1
     log_dir = log_dir / f"run_{run_number}"
     

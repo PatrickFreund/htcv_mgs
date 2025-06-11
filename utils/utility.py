@@ -1,3 +1,4 @@
+import random
 from pathlib import Path
 
 import json
@@ -11,6 +12,7 @@ def set_seed(seed: int):
     Args:
         seed (int): The seed value to set.
     """
+    random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
     if torch.cuda.is_available():
