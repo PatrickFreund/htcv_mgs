@@ -100,26 +100,29 @@ class ImageCSVDataset(Dataset):
         result = []
 
         for idx, row in df.iterrows():
-            total_score = 0
-            valid_reviewer_count = 0
+            reviewer_avgs = []
 
             for i in reviewer_indices:
                 reviewer_scores = [row.get(f"{fau}{i}", np.nan) for fau in fau_types]
-                reviewer_scores = [pd.to_numeric(s, errors='coerce') for s in reviewer_scores]
                 valid_scores = [s for s in reviewer_scores if pd.notna(s)]
 
-                ot_score = pd.to_numeric(row.get(f'ot{i}', np.nan), errors='coerce')
-                if pd.notna(ot_score) and len(valid_scores) >= 3:
-                    total_score += sum(valid_scores)
-                    valid_reviewer_count += 1
+                if pd.notna(row.get(f'ot{i}', np.nan)) and len(valid_scores) >= 3:
+                    reviewer_avgs.append(np.nanmean(valid_scores))
 
-            if valid_reviewer_count == 0:
+            if not reviewer_avgs:
                 result.append("no data")
             else:
-                avg_score = total_score / valid_reviewer_count
-                result.append('pain' if avg_score > 3 else 'no pain')
+                total_avg = np.mean(reviewer_avgs)
+                result.append('pain' if total_avg >= 0.6 else 'no pain')
 
         df['pain_status'] = result
+
+        '''no_data_df = df[df['pain_status'] == 'no data']
+        for filename in no_data_df['index']:
+            img_path = Path(self.img_dir)
+            if img_path.exists():
+                img_path.unlink()'''
+        df = df[df['pain_status'] != 'no data']
 
         output_path = Path(self.data_dir) / "labels" / "pain_nopain.csv"
         df.to_csv(output_path, index = False)
