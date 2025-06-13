@@ -21,9 +21,9 @@ ONESHOT_PATH = PROJECT_ROOT / "explainability" / "LRP-for-ResNet" / "oneshot.py"
 CONFIG_LRP_PATH = PROJECT_ROOT / "explainability" / "LRP-for-ResNet" / "configs" / "MGS_resnet18.json"
 LABEL_CSV = PROJECT_ROOT / "data" / "MGS_data" / "labels" / "labels.csv"
 IMAGE_DIR = PROJECT_ROOT / "data" / "MGS_data" / "data"
-MODEL_PATH = PROJECT_ROOT / "results" / "run5" / "config_20250610_070348" / "fold_0" / "best_model.pth"
-CONFIG_PATH = PROJECT_ROOT / "results" / "run5" / "config_20250610_070348" / "config.yaml"
-TENSORBOARD_LOG_PATH = PROJECT_ROOT / "results" / "run5" / "config_20250610_070348" / "fold_0" / "events.out.tfevents.1749531828.PCPatrick.33924.140"
+MODEL_PATH = PROJECT_ROOT / "notebooks" / "first_hyperparameter_search_res" / "raw_data" / "config_20250610_070348" / "fold_0" / "best_model.pth"
+CONFIG_PATH = PROJECT_ROOT / "notebooks" / "first_hyperparameter_search_res" / "raw_data" / "config_20250610_070348" / "config.yaml"
+TENSORBOARD_LOG_PATH = PROJECT_ROOT / "notebooks" / "first_hyperparameter_search_res" / "raw_data" / "config_20250610_070348" / "fold_0" / "events.out.tfevents.1749531828.PCPatrick.33924.140"
 
 OUTPUT_DIR = PROJECT_ROOT / "explainability" / "results" / "run5"
 sign_modes = ["all", "positive"]
