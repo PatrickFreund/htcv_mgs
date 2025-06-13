@@ -1,0 +1,10 @@
+batch_size: 32
+epochs: 10
+learning_rate: 0.001
+lr_scheduler: cosine
+model_name: resnet18
+momentum: 0.8
+num_classes: 2
+optim: SGD
+pretrained: false
+scheduler_t_max: 50
