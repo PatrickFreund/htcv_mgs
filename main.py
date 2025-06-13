@@ -5,7 +5,7 @@ from typing import Dict, Any, Tuple
 import torch
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from datamodule.dataset import ImageCSVDataset
+from datamodule.dataset import ImageCSVDataset, CachedImageCSVDataset
 from datamodule.transforms import get_train_transforms, get_val_transforms
 from utils.model import get_model
 from utils.optimizer import get_optimizer
@@ -13,11 +13,7 @@ from configs.config import TrainingConfig, GridSearchSpaceConfig, OptunaSearchSp
 from search.experiment import Experiment
 from search.search_strategy import GridSearch, OptunaSearch, SearchStrategy
 from datamodule.splitter import KFoldSplit, RandomSplit, SplitStrategy
-
-# Konstants
-CLASS_WEIGHTS = {0: 0.5744292237442923, 1: 0.42557077625570777}
-DATASET_MEAN = 0.37203550954887965
-DATASET_STD = 0.21801310757916936
+from configs.constants import CLASS_WEIGHTS, DATASET_MEAN, DATASET_STD
 
 def run_grid_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, type[SearchStrategy], Dict[str, Any]]:
     # 1. Define the search space for hyperparameter tuning 
@@ -82,7 +78,7 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
         fold_seeds=fold_seeds,  # seed for each cross-validation fold
         shuffle=True,
         early_stopping=True,
-        patience=20,
+        patience=15,
         main_metric="loss",
         balancing_strategy="weighted_loss",
         class_weights=class_weights,  # darf nicht None sein, wenn balancing_strategy != "no_balancing"
@@ -95,7 +91,7 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
     
     search_strategy_cls = OptunaSearch
     search_strategy_params = {
-        "n_trials": 50, # Number of trials for Optuna
+        "n_trials": 100, # Number of trials for Optuna
         # "timeout": 3600,  # Timeout in seconds for the search
     }
     
@@ -111,14 +107,15 @@ if __name__ == "__main__":
     
     # 3. Prepare the dataset
     data_dir = Path(__file__).resolve().parent / "data" / "MGS_data"
-    dataset = ImageCSVDataset(data_dir = data_dir)
+    # dataset = ImageCSVDataset(data_dir = data_dir)
+    dataset = CachedImageCSVDataset(data_dir = data_dir) # caches the whole dataset in ram to speed up training
     transform = {
         "train": get_train_transforms(mean = DATASET_MEAN, std = DATASET_STD), 
         "val": get_val_transforms(mean = DATASET_MEAN, std = DATASET_STD) 
     }
     
         # 4. Set path for loggin if wished 
-    log_dir = Path(__file__).resolve().parent / "results" 
+    log_dir = Path(__file__).resolve().parent / "results"
     run_number = len(list(Path.glob(log_dir, "run_*"))) + 1
     log_dir = log_dir / f"run_{run_number}"
     

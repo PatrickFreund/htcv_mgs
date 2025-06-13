@@ -1,7 +1,7 @@
 import numpy as np
 import sys
 from pathlib import Path
-from typing import Dict, Any, Callable, Tuple, Optional, Union
+from typing import Dict, Any, Callable, Tuple, Optional, Union, List
 
 from torch.utils.data import Dataset
 
@@ -9,7 +9,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from datamodule.splitter import SplitStrategy
 from training.trainer import ModelTrainer
 from training.logger import TensorBoardLogger
-from datamodule.dataset import TransformSubset
+from datamodule.dataset import TransformedSubset
 from utils.utility import set_seed
 
 
@@ -24,13 +24,29 @@ class ModelEvaluator:
     ) -> None:
         self.dataset = dataset
         self.trainer = trainer
-        self.splitter = data_splitter
         self.log_path: Optional[Path] = None
         self.transforms = transforms
         self.trainer_config = trainer_cfg
-        self.fold_seeds = trainer_cfg.get("fold_seeds", None)
-        self._check_fold_seeds()
+        self.fold_seeds = trainer_cfg.get("fold_seeds", None)        
+
+        self.splitter = data_splitter
+        self._check_fold_seeds()    
+        self.splitts = self._prepare_subsets()
+    
+    def _prepare_subsets(self) -> List[Tuple[Dataset, Dataset]]:
+        """
+        Since the ModelEvaluator get only one seed for splitting the data for all folds and parameter combinations, 
+        the splittings can be calculated once and reused.
         
+        Returns:
+            List[Tuple[Dataset, Dataset]]: A list of tuples, each containing the training and validation datasets for each fold.
+            Each tuple is of the form (train_dataset, val_dataset).
+        """
+        if hasattr(self.dataset, "get_transformed_subsets"):
+            return self.dataset.get_transformed_subsets(self.splitter, self.transforms, self.fold_seeds)
+        else:
+            raise AttributeError("The Dataset Implementation provided does not have a method 'get_transformed_subsets'.")
+    
     def _check_fold_seeds(self):
         if self.fold_seeds is None:
             raise ValueError("Fold seeds must be provided in the trainer configuration.")
@@ -50,16 +66,10 @@ class ModelEvaluator:
         scores = []
         fold_results = []
         
-        for fold_idx, (train_indices, val_indices) in enumerate(self.splitter.get_splits(self.dataset)):
+        for fold_idx, (train_data, val_data) in enumerate(self.splitts):
             set_seed(self.fold_seeds[fold_idx])
             config["used_seed"] = self.fold_seeds[fold_idx]
-
-            train_data = TransformSubset(self.dataset, train_indices, self.transforms["train"])
-            val_data = TransformSubset(self.dataset, val_indices, self.transforms["val"])
-            
-            # testing
-            # debug_visualize_transform(train_data, config)
-            
+          
             try:
                 if self.log_path:
                     fold_log_path = self.log_path / f"fold_{fold_idx}"

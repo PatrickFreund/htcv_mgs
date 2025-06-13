@@ -1,10 +1,118 @@
-from typing import Callable, List
+from abc import ABC, abstractmethod
+from typing import Callable, List, Dict, Tuple
+import sys
+
 import pandas as pd
 from pathlib import Path
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
 import numpy as np
+from torchvision import transforms
+
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+from utils.utility import set_seed
+
+
+class TransformedSubset(Dataset):
+    def __init__(self, base_dataset: Dataset, indices: List[int], transform: transforms):
+        """
+        Initializes the TransformedSubset with a base dataset, indices, and a transformation function.
+        
+        Args:
+            base_dataset (Dataset): The original dataset from which this subset is derived.
+            indices (List[int]): List of indices to select from the base dataset.
+            transform (transforms): A transformation function to apply to the images.
+        """
+        self.base_dataset = base_dataset
+        self.indices = indices
+        self.transform = transform
+    
+    def __len__(self):
+        """
+        Returns the length of the subset, which is the number of indices.
+        
+        Returns:
+            int: The number of items in the subset.
+        """
+        return len(self.indices)
+
+    @abstractmethod
+    def __getitem__(self, idx):
+        pass
+
+class NormalTransformedSubset(TransformedSubset):
+    def __init__(self, base_dataset: Dataset, indices: List[int], transform: transforms):
+        super().__init__(base_dataset, indices, transform)
+
+    def __getitem__(self, idx):
+        img, label = self.base_dataset[self.indices[idx]]
+        if self.transform:
+            img = self.transform(img)
+        return img, label
+
+class CachedTransformedSubset(TransformedSubset):
+    def __init__(self, base_dataset: Dataset, indices: List[int], transform: transforms):
+        super().__init__(base_dataset, indices, transform)
+        self.data = []
+        for i in self.indices:
+            img, label = self.base_dataset[i]
+            self.data.append((self.transform(img), label))
+        print(f"Cached {len(self.data)} transformed images for subset.")
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+
+
+class CachedImageCSVDataset(Dataset):
+    def __init__(self, data_dir: Path):
+        self.data_dir = data_dir
+        self.img_dir = Path(data_dir) / "data"
+        self.labels = pd.read_csv(Path(data_dir) / "labels" / "labels.csv")
+        self.delete_missing_images_from_labels()
+
+        self.data = []  # (PIL image, label) tuples
+
+        print("Caching all images into RAM...")
+        for _, row in self.labels.iterrows():
+            img_name = row["filename"]
+            img_stem = img_name.split(".")[0]
+
+            possible_files = list(self.img_dir.glob(f"{img_stem}.*"))
+            if not possible_files:
+                raise FileNotFoundError(f"No image found for {img_name}")
+
+            img = Image.open(possible_files[0]).convert("L")
+            self.data.append((img.copy(), int(row["label"])))
+        print(f"Cached {len(self.data)} images into RAM.")
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx: int):
+        return self.data[idx]
+
+    def get_transformed_subsets(self, splitter, transforms: Dict[str, transforms], seeds: List[int]) -> List[Tuple[Dataset, Dataset]]:
+        subsets = []
+        for fold_idx, (train_idx, val_idx) in enumerate(splitter.get_splits(self)):
+            set_seed(seeds[fold_idx]) # Set seed for reproducibility
+            subsets.append((
+                CachedTransformedSubset(self, train_idx, transforms["train"]),
+                CachedTransformedSubset(self, val_idx, transforms["val"])
+            ))
+        return subsets
+
+    def delete_missing_images_from_labels(self):
+        missing_files = []
+        for index, row in self.labels.iterrows():
+            img_stem = row["filename"].split(".")[0]
+            if not list(self.img_dir.glob(f"{img_stem}.*")):
+                missing_files.append(index)
+        self.labels.drop(missing_files, inplace=True)
+        self.labels.reset_index(drop=True, inplace=True)
+        if missing_files:
+            print(f"⚠️ Deleted {len(missing_files)} missing image entries from labels.")
 
 class ImageCSVDataset(Dataset):
     """
@@ -58,6 +166,28 @@ class ImageCSVDataset(Dataset):
 
         return img, label
 
+    def get_transformed_subsets(self, splitter, transforms: Dict[str, transforms], seeds: List[int]) -> List[Tuple[Dataset, Dataset]]:
+        """
+        Returns transformed subsets of the dataset for training and validation based on the provided splitter and transforms.
+        
+        Args:
+            splitter (Splitter): An instance of a splitter class that provides train/val splits.
+            transforms (Dict[str, transforms]): A dictionary containing transformations for 'train' and 'val'.
+            seeds (List[int]): A list of seeds for reproducibility across folds.
+        
+        Returns:
+            List[Tuple[Dataset, Dataset]]: A list of tuples containing training and validation datasets.
+        """
+        subsets = []
+        for train_idx, val_idx in splitter.get_splits(self):
+            # setting the seed isn't necessary here, since the transformations aren't applied here but later
+            # the NormalTransformedSubset are only a preparation meassure to apply the transforms later
+            subsets.append((
+                NormalTransformedSubset(self, train_idx, transforms["train"]),
+                NormalTransformedSubset(self, val_idx, transforms["val"])
+            ))
+        return subsets
+
     def delete_missing_images_from_labels(self):
         missing_files = []
         for index, row in self.labels.iterrows():
@@ -71,20 +201,7 @@ class ImageCSVDataset(Dataset):
         self.labels.reset_index(drop=True, inplace=True)
         print(f"Deleted {len(missing_files)} missing images from labels.")
 
-class TransformSubset(Dataset):
-    def __init__(self, base_dataset: Dataset, indices: List[int], transform: Callable = None):
-        self.base_dataset = base_dataset
-        self.indices = indices
-        self.transform = transform
 
-    def __len__(self):
-        return len(self.indices)
-
-    def __getitem__(self, idx):
-        img, label = self.base_dataset[self.indices[idx]]
-        if self.transform:
-            img = self.transform(img)
-        return img, label
 
 
 def get_dataset(data_foldername: str) -> ImageCSVDataset:

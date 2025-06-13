@@ -254,8 +254,9 @@ class ModelTrainer:
         model: nn.Module = self.model_builder(config).to(self.device)
         optimizer: torch.optim.Optimizer = self.optimizer_builder(model, config)
         
+        pin_memory = True if self.device == torch.device("cuda") else False
         train_loader, train_criterion = self.balancing_strategy.prepare(train_data, config, device = self.device)
-        val_loader = DataLoader(val_data, batch_size = config["batch_size"], shuffle = self.shuffle)
+        val_loader = DataLoader(val_data, batch_size = config["batch_size"], shuffle = self.shuffle, pin_memory=pin_memory)
         val_criterion = nn.CrossEntropyLoss()
         lr_scheduler = self._resolve_lr_scheduler(config, optimizer)
 
