@@ -27,11 +27,11 @@ if __name__ == "__main__":
         optim=["Adam", "SGD"],
         learning_rate=[0.0001],
         epochs=[200],
-        lr_scheduler=["step", "cosine", "none"],
+        lr_scheduler=["none"],
         scheduler_step_size=[5],
         scheduler_gamma=[0.5],
         scheduler_t_max=[50],
-        momentum=[0.9, 0.8, 0.0]
+        momentum=[0.8, 0.0]
     ).to_grid_dict()
     
     # 2. Define the training configuration
@@ -66,9 +66,9 @@ if __name__ == "__main__":
     search_strategy_cls = GridSearch
     
     # 4. Set path for loggin if wished 
-    log_dir = Path(__file__).resolve().parent / "results" 
-    run_number = len(list(Path.glob(log_dir, "run_*"))) + 1
-    log_dir = log_dir / f"run_{run_number}"
+    log_dir = Path(__file__).resolve().parent / "results" / "run5"  # Change to your desired log directory
+    # run_number = len(list(Path.glob(log_dir, "run_*"))) + 1
+    # log_dir = log_dir / f"run_{run_number}"
     
     
     # 5. Initialize experiment 

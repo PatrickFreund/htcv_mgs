@@ -1,0 +1,18 @@
+{
+  "seed": 42,
+  "no_deterministic": true,
+  "model": "resnet18_custom",
+  "add_attention_branch": false,
+  "base_pretrained": "",
+  "base_pretrained2": "",
+  "pretrained": "",
+  "trainable_module": -1,
+  "dataset": "custom",
+  "image_size": 224,
+  "batch_size": 1,
+  "num_channel": 1,
+  "classes": [0, 1],
+  "input_size": [224, 224],
+  "mean": [0.37203550954887965],
+  "std": [0.21801310757916936]
+}
