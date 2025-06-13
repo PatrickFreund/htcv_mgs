@@ -1,3 +1,0 @@
-[submodule "explainability/LRP-for-ResNet"]
-	path = explainability/LRP-for-ResNet
-	url = https://github.com/keio-smilab24/LRP-for-ResNet.git
