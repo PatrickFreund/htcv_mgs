@@ -27,6 +27,7 @@ class ModelEvaluator:
         self.splitter = data_splitter
         self.log_path: Optional[Path] = None
         self.transforms = transforms
+        self.trainer_config = trainer_cfg
         self.fold_seeds = trainer_cfg.get("fold_seeds", None)
         self._check_fold_seeds()
         

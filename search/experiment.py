@@ -21,10 +21,12 @@ class Experiment:
         trainer_cfg: Dict[str, Any],
         split_strategy: SplitStrategy,
         transforms: Dict[str, Callable],
+        search_strategy_params: Dict[str, Any] = {},
         log_base_path: Optional[Union[str, Path]] = None,
     ) -> None:
         self.dataset = dataset
         self.search_strategy_cls = search_strategy_cls
+        self.search_strategy_params = search_strategy_params
         self.search_space = search_space
         self.trainer_cfg = trainer_cfg
         self.split_strategy = split_strategy
@@ -69,7 +71,8 @@ class Experiment:
         strategy = self.search_strategy_cls(
             search_space=self.search_space,
             model_validator=model_validator,
-            log_base_path=self.log_base_path
+            log_base_path=self.log_base_path,
+            **self.search_strategy_params
         )
 
         return strategy.search()

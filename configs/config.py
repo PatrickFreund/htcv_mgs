@@ -97,7 +97,7 @@ class TrainingConfig:
 
 
 @dataclass
-class SearchSpaceConfig:
+class GridSearchSpaceConfig:
     """
     Configuration class for defining the hyperparameter search space during model training.
     Each attribute represents a list of possible values to explore during hyperparameter tuning.
@@ -170,3 +170,42 @@ class SearchSpaceConfig:
             if v is not None:
                 grid[k] = v
         return grid
+
+
+@dataclass
+class ParamRange:
+    """Defines a continuous range for float or int parameters."""
+    type: str  # "int" or "float"
+    low: float
+    high: float
+    log: bool = False  # whether to sample on a log scale
+
+@dataclass
+class OptunaSearchSpaceConfig:
+    """
+    Configuration class for Optuna-based hyperparameter search.
+    Allows for both discrete (categorical) and continuous (range-based) definitions.
+
+    Each parameter is either a list of discrete options or a ParamRange object.
+    """
+
+    batch_size: Union[List[int], ParamRange]
+    optim: List[str]
+    learning_rate: Union[List[float], ParamRange]
+    epochs: Union[List[int], ParamRange]
+    
+    lr_scheduler: List[str] # categorical options for learning rate scheduler
+    scheduler_step_size: Optional[Union[List[int], ParamRange]] = None
+    scheduler_gamma: Optional[Union[List[float], ParamRange]] = None
+    scheduler_t_max: Optional[Union[List[int], ParamRange]] = None
+    momentum: Optional[Union[List[float], ParamRange]] = None
+
+    model_name: List[str] = field(default_factory=lambda: ["resnet18"])  # Model architecture options
+    pretrained: List[bool] = field(default_factory=lambda: [False])
+    num_classes: List[int] = field(default_factory=lambda: [2])  # Default for binary classification
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Converts the dataclass to a dictionary for easier handling in Optuna parameter suggestion.
+        """
+        return self.__dict__
