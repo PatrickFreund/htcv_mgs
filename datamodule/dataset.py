@@ -1,6 +1,7 @@
 import pandas as pd
 from pathlib import Path
 import torch
+import numpy as np
 from PIL import Image
 from torchvision import transforms
 from torch.utils.data import Dataset
@@ -37,6 +38,7 @@ class ImageCSVDataset(Dataset):
     def __init__(self, data_dir: Path, transform: transforms = None):
         self.data_dir = data_dir
         self.img_dir = Path(data_dir) / "data" # Assuming images are in a subfolder named 'data'
+        self.mgs = pd.read_csv(Path(data_dir) / "labels" / "v3_mgs_01.csv")
         self.labels = pd.read_csv(Path(data_dir) / "labels" / "labels.csv") # Assuming labels are in a subfolder named 'labels'
         self.delete_missing_images_from_labels()
         self.transform = transform
@@ -80,6 +82,51 @@ class ImageCSVDataset(Dataset):
         self.labels.drop(missing_files, inplace=True)
         self.labels.reset_index(drop=True, inplace=True)
         print(f"Deleted {len(missing_files)} missing images from labels.")
+
+
+    def calculate_pain_status(self):
+        df = self.mgs.copy()
+        index_col = df['index'].copy()
+
+        for col in df.columns:
+            if col != 'index':
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        df.replace(9, np.nan, inplace = True)
+        df['index'] = index_col
+
+        fau_types = ['ot', 'nb', 'cb', 'ep', 'wc']
+        reviewer_indices = range(1, 13)
+        result = []
+
+        for idx, row in df.iterrows():
+            reviewer_avgs = []
+
+            for i in reviewer_indices:
+                reviewer_scores = [row.get(f"{fau}{i}", np.nan) for fau in fau_types]
+                valid_scores = [s for s in reviewer_scores if pd.notna(s)]
+
+                if pd.notna(row.get(f'ot{i}', np.nan)) and len(valid_scores) >= 3:
+                    reviewer_avgs.append(np.nanmean(valid_scores))
+
+            if not reviewer_avgs:
+                result.append("no data")
+            else:
+                total_avg = np.mean(reviewer_avgs)
+                result.append('pain' if total_avg >= 0.6 else 'no pain')
+
+        df['pain_status'] = result
+
+        '''no_data_df = df[df['pain_status'] == 'no data']
+        for filename in no_data_df['index']:
+            img_path = Path(self.img_dir)
+            if img_path.exists():
+                img_path.unlink()'''
+        df = df[df['pain_status'] != 'no data']
+
+        output_path = Path(self.data_dir) / "labels" / "pain_nopain.csv"
+        df.to_csv(output_path, index = False)
+        return df[['index', 'pain_status']]
 
 def get_dataset(data_foldername: str, transform:transforms) -> ImageCSVDataset:
     """
@@ -138,6 +185,7 @@ if __name__ == "__main__":
     data_foldername = "MGS_data"
     dataset = get_dataset(data_foldername, transform=None)
     from torch.utils.data import DataLoader
+    pain_df = dataset.calculate_pain_status()
     print(f"Number of samples in {data_foldername} dataset: {len(dataset)}")
     dataloader = DataLoader(dataset, batch_size=2, shuffle=True)
     
