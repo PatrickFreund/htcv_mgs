@@ -3,7 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 
-def create_pain_distribution_histogram(labels_file, output_folder, pain_threshold=3):
+def create_pain_distribution_histogram(labels_file, output_folder, pain_threshold=0.6):
     """
     Create a histogram showing the distribution of images classified as pain vs no pain
     based on the average score across all reviewers.
@@ -36,14 +36,22 @@ def create_pain_distribution_histogram(labels_file, output_folder, pain_threshol
                 # Get valid scores for this reviewer
                 numeric_scores = []
                 for s in [row[col] for col in cols]:
+                    # Skip NaN, dashes, and invalid values
+                    if pd.isna(s) or s == '-' or s == '9':
+                        continue
+                        
                     try:
-                        if not pd.isna(s) and s != '-' and s != 9:
-                            numeric_scores.append(int(s))
+                        # Convert string to integer
+                        score = int(s)
+                        # Only accept scores of 0, 1, or 2
+                        if score in [0, 1, 2]:
+                            numeric_scores.append(score)
                     except (ValueError, TypeError):
-                        pass
+                        continue
                 
-                if numeric_scores:
-                    all_reviewer_scores.append(sum(numeric_scores))
+                # Only include reviewer if they have at least 3 valid scores
+                if len(numeric_scores) >= 3:
+                    all_reviewer_scores.append(sum(numeric_scores) / len(numeric_scores))
             except Exception as e:
                 print(f"Error processing {image_name}: {e}")
         
