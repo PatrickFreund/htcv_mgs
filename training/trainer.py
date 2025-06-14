@@ -1,3 +1,4 @@
+import copy
 import sys
 from pathlib import Path
 from typing import Callable, Dict, Any, Optional, Union, Tuple
@@ -21,14 +22,17 @@ class EarlyStopping:
         self.mode = mode
         self.counter = 0
         self.best_metric: float = None
+        self.best_model_state: Optional[nn.Module] = None
     
-    def __call__(self, metric: float) -> bool:
+    def __call__(self, metric: float, model: nn.Module) -> bool:
         if self.best_metric is None:
             self.best_metric = metric
+            self.best_model_state = copy.deepcopy(model.state_dict())
             return False
         
         if self._is_improvement(metric):
             self.best_metric = metric
+            self.best_model_state = copy.deepcopy(model.state_dict())
             self.counter = 0
             return False
         else:
@@ -46,6 +50,7 @@ class EarlyStopping:
     def reset(self):
         self.counter = 0
         self.best_metric = None
+        self.best_model_state = None
 
 class ModelTrainer:
     def __init__(
@@ -291,21 +296,23 @@ class ModelTrainer:
                 raise ValueError(f"Invalid mode '{self.mode}' for main metric. Use 'min' or 'max'.")
             
             # Early stopping check if early stopping is enabled
-            if self.early_stopping and self.early_stopping(val_metrics[self.main_metric]):
+            if self.early_stopping and self.early_stopping(val_metrics[self.main_metric], model = model):
                 break
+
+        try:
+            if self.early_stopping and self.log_path:
+                best_metric = self.early_stopping.best_metric
+                torch.save(self.early_stopping.best_model_state, self.log_path / f"best_model_epoch{best_epoch}_metric{best_metric}.pth")
+        except Exception as e:
+            print(f"Error saving model: {e}")
+            print("Model will not be saved. Please check the log path and permissions.")
+            
 
         if self.early_stopping:
             self.early_stopping.reset()
         if self.logger:
             self.logger.close()
             self.logger = None  # Reset logger to avoid memory leaks
-
-        try:
-            torch.save(model.state_dict(), self.log_path / "best_model.pth")
-        except Exception as e:
-            print(f"Error saving model: {e}")
-            print("Model will not be saved. Please check the log path and permissions.")
-            
 
         return {
             "history": history,

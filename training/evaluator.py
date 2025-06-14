@@ -30,22 +30,7 @@ class ModelEvaluator:
         self.fold_seeds = trainer_cfg.get("fold_seeds", None)        
 
         self.splitter = data_splitter
-        self._check_fold_seeds()    
-        self.splitts = self._prepare_subsets()
-    
-    def _prepare_subsets(self) -> List[Tuple[Dataset, Dataset]]:
-        """
-        Since the ModelEvaluator get only one seed for splitting the data for all folds and parameter combinations, 
-        the splittings can be calculated once and reused.
-        
-        Returns:
-            List[Tuple[Dataset, Dataset]]: A list of tuples, each containing the training and validation datasets for each fold.
-            Each tuple is of the form (train_dataset, val_dataset).
-        """
-        if hasattr(self.dataset, "get_transformed_subsets"):
-            return self.dataset.get_transformed_subsets(self.splitter, self.transforms, self.fold_seeds)
-        else:
-            raise AttributeError("The Dataset Implementation provided does not have a method 'get_transformed_subsets'.")
+        self._check_fold_seeds()
     
     def _check_fold_seeds(self):
         if self.fold_seeds is None:
@@ -66,10 +51,13 @@ class ModelEvaluator:
         scores = []
         fold_results = []
         
-        for fold_idx, (train_data, val_data) in enumerate(self.splitts):
+        for fold_idx, (train_idx, val_idx) in enumerate(self.splitter.get_splits(self.dataset)):
             set_seed(self.fold_seeds[fold_idx])
             config["used_seed"] = self.fold_seeds[fold_idx]
-          
+            
+            train_data = TransformedSubset(self.dataset, train_idx, self.transforms["train"])
+            val_data = TransformedSubset(self.dataset, val_idx, self.transforms["val"])
+
             try:
                 if self.log_path:
                     fold_log_path = self.log_path / f"fold_{fold_idx}"

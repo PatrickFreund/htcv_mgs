@@ -37,32 +37,11 @@ class TransformedSubset(Dataset):
         """
         return len(self.indices)
 
-    @abstractmethod
-    def __getitem__(self, idx):
-        pass
-
-class NormalTransformedSubset(TransformedSubset):
-    def __init__(self, base_dataset: Dataset, indices: List[int], transform: transforms):
-        super().__init__(base_dataset, indices, transform)
-
     def __getitem__(self, idx):
         img, label = self.base_dataset[self.indices[idx]]
         if self.transform:
             img = self.transform(img)
         return img, label
-
-class CachedTransformedSubset(TransformedSubset):
-    def __init__(self, base_dataset: Dataset, indices: List[int], transform: transforms):
-        super().__init__(base_dataset, indices, transform)
-        self.data = []
-        for i in self.indices:
-            img, label = self.base_dataset[i]
-            self.data.append((self.transform(img), label))
-        print(f"Cached {len(self.data)} transformed images for subset.")
-
-    def __getitem__(self, idx):
-        return self.data[idx]
-
 
 
 class CachedImageCSVDataset(Dataset):
@@ -92,16 +71,6 @@ class CachedImageCSVDataset(Dataset):
 
     def __getitem__(self, idx: int):
         return self.data[idx]
-
-    def get_transformed_subsets(self, splitter, transforms: Dict[str, transforms], seeds: List[int]) -> List[Tuple[Dataset, Dataset]]:
-        subsets = []
-        for fold_idx, (train_idx, val_idx) in enumerate(splitter.get_splits(self)):
-            set_seed(seeds[fold_idx]) # Set seed for reproducibility
-            subsets.append((
-                CachedTransformedSubset(self, train_idx, transforms["train"]),
-                CachedTransformedSubset(self, val_idx, transforms["val"])
-            ))
-        return subsets
 
     def delete_missing_images_from_labels(self):
         missing_files = []
@@ -165,28 +134,6 @@ class ImageCSVDataset(Dataset):
         img = Image.open(img_path).convert("L")  # Grayscale
 
         return img, label
-
-    def get_transformed_subsets(self, splitter, transforms: Dict[str, transforms], seeds: List[int]) -> List[Tuple[Dataset, Dataset]]:
-        """
-        Returns transformed subsets of the dataset for training and validation based on the provided splitter and transforms.
-        
-        Args:
-            splitter (Splitter): An instance of a splitter class that provides train/val splits.
-            transforms (Dict[str, transforms]): A dictionary containing transformations for 'train' and 'val'.
-            seeds (List[int]): A list of seeds for reproducibility across folds.
-        
-        Returns:
-            List[Tuple[Dataset, Dataset]]: A list of tuples containing training and validation datasets.
-        """
-        subsets = []
-        for train_idx, val_idx in splitter.get_splits(self):
-            # setting the seed isn't necessary here, since the transformations aren't applied here but later
-            # the NormalTransformedSubset are only a preparation meassure to apply the transforms later
-            subsets.append((
-                NormalTransformedSubset(self, train_idx, transforms["train"]),
-                NormalTransformedSubset(self, val_idx, transforms["val"])
-            ))
-        return subsets
 
     def delete_missing_images_from_labels(self):
         missing_files = []

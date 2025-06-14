@@ -147,6 +147,7 @@ class GridSearchSpaceConfig:
     # Each of these field must be a list of at least one element or there will be an error
     batch_size: List[int] # Batch size for training
     optim: List[str] # Optimizer to use, e.g., ["Adam", "SGD"]
+    weight_decay: List[float]
     learning_rate: List[float] # Learning rate for the optimizer, e.g., [0.001, 0.0001]
     epochs: List[int] = field(default_factory=lambda: [200]) # Number of epochs to train, e.g., [30]
     model_name: List[str] = field(default_factory=lambda: ["resnet18"]) # Model architecture, e.g., ["resnet18"]
@@ -191,6 +192,7 @@ class OptunaSearchSpaceConfig:
 
     batch_size: Union[List[int], ParamRange]
     optim: List[str]
+    weight_decay: Union[List[float], ParamRange]
     learning_rate: Union[List[float], ParamRange]
     epochs: Union[List[int], ParamRange]
     

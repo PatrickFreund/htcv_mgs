@@ -20,6 +20,7 @@ def run_grid_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, ty
     search_space = GridSearchSpaceConfig(
         batch_size=[32],
         optim=["Adam", "SGD"],
+        weight_decay=[1e-5, 1e-4, 1e-3, 1e-2],
         learning_rate=[0.1, 0.01, 0.001, 0.0001],
         epochs=[200],
         lr_scheduler=["none", "step", "cosine"],
@@ -60,7 +61,8 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
     search_space = OptunaSearchSpaceConfig(
         batch_size=[32],
         optim=["Adam", "SGD"],
-        learning_rate=ParamRange(type="float", low=1e-5, high=1e-1, log=True),
+        weight_decay=ParamRange(type="float", low=1e-5, high=1e-2, log=True),
+        learning_rate=ParamRange(type="float", low=1e-5, high=1e-2, log=True),
         epochs=[100],
         lr_scheduler=["none", "step", "cosine"],
         scheduler_step_size= ParamRange(type="int", low=5, high=20, log=False),
@@ -71,7 +73,7 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
     
     class_weights = {k: 1 / v for k, v in CLASS_WEIGHTS.items()}  # Invert weights for CrossEntropyLoss
     class_weights = {k: v / sum(class_weights.values()) for k, v in class_weights.items()} 
-    fold_seeds = [42]
+    fold_seeds = [42, 43, 44]
     trainer_config = TrainingConfig(
         model_builder=get_model,
         optimizer_builder=get_optimizer,
@@ -86,12 +88,13 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
     ).to_dict()
     
     # Only one seed for splitting the data since the trails are better comparable
-    # splitter = KFoldSplit(k=3, seed=fold_seeds[0])
-    splitter = RandomSplit(val_size=0.2, seed=fold_seeds[0])
+    splitter = KFoldSplit(k=3, seed=fold_seeds[0])
+    # splitter = RandomSplit(val_size=0.2, seed=fold_seeds[0])
     
     search_strategy_cls = OptunaSearch
     search_strategy_params = {
-        "n_trials": 100, # Number of trials for Optuna
+        "n_trials": 300, # Number of trials for Optuna
+        "startup_trials": 20
         # "timeout": 3600,  # Timeout in seconds for the search
     }
     
@@ -115,7 +118,7 @@ if __name__ == "__main__":
     }
     
         # 4. Set path for loggin if wished 
-    log_dir = Path(__file__).resolve().parent / "results"
+    log_dir = Path(__file__).resolve().parent / "results" 
     run_number = len(list(Path.glob(log_dir, "run_*"))) + 1
     log_dir = log_dir / f"run_{run_number}"
     

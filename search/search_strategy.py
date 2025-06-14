@@ -137,10 +137,11 @@ class GridSearch(SearchStrategy):
 
 class OptunaSearch(SearchStrategy):
     def __init__(self, search_space: Dict, model_validator: ModelEvaluator, log_base_path: Optional[Path] = None, 
-                 n_trials: int = 100, timeout: Optional[int] = None, seed: int = 42):
+                 n_trials: int = 100, timeout: Optional[int] = None, startup_trials: int = 10, seed: Optional[int] = None):
         super().__init__(search_space, model_validator, log_base_path)
         self.n_trials = n_trials
         self.timeout = timeout
+        self.start_up_trials = startup_trials
         self.seed = seed
         
     def _get_config_log_path(self, trial_number: int) -> Optional[Path]:
@@ -211,7 +212,7 @@ class OptunaSearch(SearchStrategy):
             assert val is not None, f"Parameter {param_name} must be defined in the search space."
             config[param_name] = val[0] if isinstance(val, list) else val
         
-        for param_name in ["learning_rate"]:
+        for param_name in ["learning_rate", "weight_decay"]:
             val = self.search_space.get(param_name)
             assert val is not None, f"Parameter {param_name} must be defined in the search space."
             config[param_name] = self._suggest_single_param(trial, param_name, val)
@@ -253,7 +254,14 @@ class OptunaSearch(SearchStrategy):
         trial.set_user_attr("mean_score", mean_score)
         trial.set_user_attr("std_score", std_score)
         
-        return mean_score
+        if self.direction == "maximize":
+            # if main metric is chosen as main metric, we want to maximize the objective function therefore solutions
+            # with a high mean score and low std score are preferred
+            return mean_score - std_score 
+        else:
+            # if loss is chosen as main metric, we want to minimize the objective function therefore solutions
+            # with a low mean score and low std score are preferred
+            return mean_score + std_score  # Beispiel: Minimieren der Summe zwischen Mean und Std Score
     
     def search(self) -> Tuple[Dict[str, Any], float, float]:
         """
@@ -262,9 +270,11 @@ class OptunaSearch(SearchStrategy):
         Returns:
             Tuple[Dict[str, Any], float, float]: Beste Konfiguration, deren Mean Score und Std Score.
         """
-        direction = self._resolve_objective_direction()
-        sampler = TPESampler(n_startup_trials=10, seed=self.seed)  # Setze den Sampler mit dem Seed
-        study = optuna.create_study(direction=direction, sampler=sampler, study_name="MGS_Optuna_Search")
+        print(f"Starte Optuna-Suche... with n_trials={self.n_trials}, start_up_trials={self.start_up_trials}, seed={self.seed}")
+        self.direction = self._resolve_objective_direction()
+        print(f"Optuna objective direction: {self.direction}")
+        sampler = TPESampler(n_startup_trials=self.start_up_trials, seed=self.seed)  # Setze den Sampler mit dem Seed
+        study = optuna.create_study(direction=self.direction, sampler=sampler, study_name="MGS_Optuna_Search")
         study.optimize(self.objective, n_trials=self.n_trials, timeout=self.timeout)
         
         best_trial = study.best_trial
