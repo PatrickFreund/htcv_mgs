@@ -168,18 +168,13 @@ def calculate_pain_status(data_dir: Path):
                 result.append("no data")
             else:
                 total_avg = np.mean(reviewer_avgs)
-                result.append('pain' if total_avg >= 0.6 else 'no pain')
+                result.append(1 if total_avg >= 0.6 else 0)
 
         df['pain_status'] = result
 
-        '''no_data_df = df[df['pain_status'] == 'no data']
-        for filename in no_data_df['index']:
-            img_path = Path(self.img_dir)
-            if img_path.exists():
-                img_path.unlink()'''
         df = df[df['pain_status'] != 'no data']
 
         output_path = Path(data_dir) / "labels" / "pain_nopain.csv"
-        df.to_csv(output_path, index = False)
+        df[['index', 'pain_status']].to_csv(output_path, index=False)
         return df[['index', 'pain_status']]
 
