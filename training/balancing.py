@@ -49,8 +49,9 @@ class NoBalancingStrategy(BalancingStrategy):
         config: Dict[str, Any],
         device: torch.device
     ) -> Tuple[DataLoader, nn.CrossEntropyLoss]:
+        pin_memory = True if device == torch.device("cuda") else False
         lossfn = nn.CrossEntropyLoss()
-        loader = DataLoader(train_subset, batch_size=config["batch_size"], shuffle=config.get("shuffle", True))
+        loader = DataLoader(train_subset, batch_size=config["batch_size"], shuffle=config.get("shuffle", True), pin_memory=pin_memory)
         return loader, lossfn
 
 class WeightedLossBalancing(BalancingStrategy):
@@ -78,13 +79,14 @@ class WeightedLossBalancing(BalancingStrategy):
         Returns:
             Tuple[DataLoader, nn.CrossEntropyLoss]: A DataLoader for the dataset and a weighted CrossEntropyLoss function.
         """
+        pin_memory = True if device == torch.device("cuda") else False
         weights: List[float]
         if self.class_weights is None:
             raise ValueError("Class weights must be provided for WeightedLossBalancing strategy.")
         _, weights = zip(*sorted(self.class_weights.items()))
         weights: torch.Tensor = torch.tensor(weights, dtype = torch.float32, device = device)
         lossfn = nn.CrossEntropyLoss(weight = weights)
-        loader = DataLoader(train_subset, batch_size=config["batch_size"], shuffle=config.get("shuffle", True))
+        loader = DataLoader(train_subset, batch_size=config["batch_size"], shuffle=config.get("shuffle", True), pin_memory=pin_memory)
         return loader, lossfn
 
 class OversamplingBalancing(BalancingStrategy):
@@ -101,6 +103,7 @@ class OversamplingBalancing(BalancingStrategy):
         config: Dict[str, Any],
         device: torch.device
     ) -> Tuple[DataLoader, nn.CrossEntropyLoss]:
+        pin_memory = True if device == torch.device("cuda") else False
         weights: List[float]
         if self.class_weights is None:
             raise ValueError("Class weights must be provided for OversamplingBalancing strategy.")
@@ -110,7 +113,7 @@ class OversamplingBalancing(BalancingStrategy):
         
         sampling_weights: torch.Tensor = weights[labels]
         sampler = WeightedRandomSampler(sampling_weights, len(sampling_weights), replacement=True)
-        loader = DataLoader(train_subset, batch_size=config["batch_size"], sampler=sampler)
+        loader = DataLoader(train_subset, batch_size=config["batch_size"], sampler=sampler, pin_memory=pin_memory)
         lossfn = nn.CrossEntropyLoss()
         return loader, lossfn
 
