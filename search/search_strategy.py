@@ -49,44 +49,50 @@ class GridSearch(SearchStrategy):
         configs = []
         
         for cfg in raw_combinations:
-            if cfg.get("optim") != "SGD" and "momentum" in cfg and cfg["momentum"] != 0.0:
-                continue
-            
-            scheduler = cfg.get("lr_scheduler", "none")
+            cfg_copy = dict(cfg)
+        
+            # Filter/normalize momentum
+            if cfg_copy.get("optim") != "SGD":
+                cfg_copy["momentum"] = 0.0
 
-            # Entferne unnötige scheduler-Parameter je nach Scheduler-Typ
-            cfg_copy = dict(cfg)  # mache Kopie, um Original nicht zu verändern
+            # Handle lr_scheduler-specific params
+            scheduler = cfg_copy.get("lr_scheduler", "none")
 
             if scheduler == "none":
-                # Remove all scheduler params
                 for key in ["scheduler_step_size", "scheduler_gamma", "scheduler_t_max"]:
-                    cfg.pop(key, None)
-                # Add defaults (optional if downstream expects keys)
-                cfg["scheduler_step_size"] = 0
-                cfg["scheduler_gamma"] = 0
-                cfg["scheduler_t_max"] = 0
+                    cfg_copy.pop(key, None)
+                cfg_copy["scheduler_step_size"] = 0
+                cfg_copy["scheduler_gamma"] = 0
+                cfg_copy["scheduler_t_max"] = 0
 
             elif scheduler == "step":
-                # Remove unused param
-                cfg.pop("scheduler_t_max", None)
-                # Ensure required ones exist
-                cfg["scheduler_step_size"] = cfg.get("scheduler_step_size", 0)
-                cfg["scheduler_gamma"] = cfg.get("scheduler_gamma", 0)
-                cfg["scheduler_t_max"] = 0
+                cfg_copy.pop("scheduler_t_max", None)
+                cfg_copy["scheduler_step_size"] = cfg_copy.get("scheduler_step_size", 0)
+                cfg_copy["scheduler_gamma"] = cfg_copy.get("scheduler_gamma", 0)
+                cfg_copy["scheduler_t_max"] = 0
 
             elif scheduler == "cosine":
-                cfg.pop("scheduler_step_size", None)
-                cfg.pop("scheduler_gamma", None)
-                cfg["scheduler_t_max"] = cfg.get("scheduler_t_max", 0)
-                cfg["scheduler_step_size"] = 0
-                cfg["scheduler_gamma"] = 0
+                cfg_copy.pop("scheduler_step_size", None)
+                cfg_copy.pop("scheduler_gamma", None)
+                cfg_copy["scheduler_t_max"] = cfg_copy.get("scheduler_t_max", 0)
+                cfg_copy["scheduler_step_size"] = 0
+                cfg_copy["scheduler_gamma"] = 0
 
             else:
                 raise ValueError(f"Unbekannter lr_scheduler: {scheduler}")
 
             configs.append(cfg_copy)
 
-        return configs
+        # Remove duplicates
+        seen = set()
+        unique_configs = []
+        for cfg in configs:
+            key = tuple(sorted(cfg.items()))
+            if key not in seen:
+                seen.add(key)
+                unique_configs.append(cfg)
+
+        return unique_configs
 
     def _get_config_log_path(self, config: Dict[str, Any]) -> Optional[Path]:
         if not self.log_base_path:
