@@ -9,7 +9,7 @@ from datamodule.dataset import ImageCSVDataset, CachedImageCSVDataset
 from datamodule.transforms import get_train_transforms, get_val_transforms
 from utils.model import get_model
 from utils.optimizer import get_optimizer
-from configs.config import TrainingConfig, GridSearchSpaceConfig, OptunaSearchSpaceConfig, ParamRange
+from configs.config import TrainingConfig, GridSearchSpaceConfig, OptunaSearchSpaceConfig, ParamRange, DatasetConfig
 from search.experiment import Experiment
 from search.search_strategy import GridSearch, OptunaSearch, SearchStrategy
 from datamodule.splitter import KFoldSplit, RandomSplit, SplitStrategy
@@ -17,17 +17,29 @@ from configs.constants import CLASS_WEIGHTS, DATASET_MEAN, DATASET_STD
 
 def run_grid_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, type[SearchStrategy], Dict[str, Any]]:
     # 1. Define the search space for hyperparameter tuning 
+    # search_space = GridSearchSpaceConfig(
+    #     batch_size=[32],
+    #     optim=["SGD", "Adam"],
+    #     weight_decay=[1e-4, 1e-3],
+    #     learning_rate=[0.01, 0.001, 0.0001],
+    #     epochs=[200],
+    #     lr_scheduler=["step", "cosine"],
+    #     scheduler_step_size=[5, 30],
+    #     scheduler_gamma=[0.5, 0.1],
+    #     scheduler_t_max=[200],
+    #     momentum=[0.8, 0.9]
+    # ).to_grid_dict()
     search_space = GridSearchSpaceConfig(
         batch_size=[32],
-        optim=["Adam", "SGD"],
-        weight_decay=[1e-5, 1e-4, 1e-3, 1e-2],
-        learning_rate=[0.1, 0.01, 0.001, 0.0001],
+        optim=["Adam"],
+        weight_decay=[0.001],
+        learning_rate=[0.001],
         epochs=[200],
-        lr_scheduler=["none", "step", "cosine"],
-        scheduler_step_size=[5, 30],
-        scheduler_gamma=[0.5, 0.1],
+        lr_scheduler=["step"],
+        scheduler_step_size=[50],
+        scheduler_gamma=[0.5],
         scheduler_t_max=[200],
-        momentum=[0.0, 0.8, 0.9]
+        momentum=[0.0]
     ).to_grid_dict()
     
     # 2. Define the training configuration
@@ -59,7 +71,7 @@ def run_grid_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, ty
 
 def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, type[SearchStrategy], Dict[str, Any]]:
     search_space = OptunaSearchSpaceConfig(
-        batch_size=[32],
+        batch_size=[32, 64],
         optim=["Adam", "SGD"],
         weight_decay=ParamRange(type="float", low=1e-5, high=1e-2, log=True),
         learning_rate=ParamRange(type="float", low=1e-5, high=1e-2, log=True),
@@ -105,17 +117,28 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
 
 if __name__ == "__main__":
     
-    # search_space, trainer_config, split_strategy, search_strategy_cls, search_strategy_params = run_grid_search()
-    search_space, trainer_config, split_strategy, search_strategy_cls, search_strategy_params = run_optuna_search()
+    search_space, trainer_config, split_strategy, search_strategy_cls, search_strategy_params = run_grid_search()
+    # search_space, trainer_config, split_strategy, search_strategy_cls, search_strategy_params = run_optuna_search()
     
-    # 3. Prepare the dataset
-    data_dir = Path(__file__).resolve().parent / "data" / "MGS_data"
-    # dataset = ImageCSVDataset(data_dir = data_dir)
-    dataset = CachedImageCSVDataset(data_dir = data_dir) # caches the whole dataset in ram to speed up training
-    transform = {
-        "train": get_train_transforms(mean = DATASET_MEAN, std = DATASET_STD), 
-        "val": get_val_transforms(mean = DATASET_MEAN, std = DATASET_STD) 
-    }
+    # # 3. Prepare the dataset
+    # data_dir = Path(__file__).resolve().parent / "data" / "MGS_data_nobg"
+    # # dataset = ImageCSVDataset(data_dir = data_dir)
+    # dataset = CachedImageCSVDataset(data_dir = data_dir) # caches the whole dataset in ram to speed up training
+    # transform = {
+    #     "train": get_train_transforms(mean = DATASET_MEAN, std = DATASET_STD, angle_range=(0, 7)), 
+    #     "val": get_val_transforms(mean = DATASET_MEAN, std = DATASET_STD) 
+    # }
+    
+    dataset_config = DatasetConfig(
+        data_dir = Path(__file__).resolve().parent / "data" / "MGS_data_nobg",
+        dataset_type = "nobg", # "default" and "cached" are also available
+        transforms = {
+            "train": get_train_transforms(mean=DATASET_MEAN, std=DATASET_STD, angle_range=(0, 7)),
+            "val": get_val_transforms(mean=DATASET_MEAN, std=DATASET_STD)
+        }
+    )
+    dataset_config = dataset_config.to_dict()
+    
     
         # 4. Set path for loggin if wished 
     log_dir = Path(__file__).resolve().parent / "results" 
@@ -125,12 +148,12 @@ if __name__ == "__main__":
     
         # 5. Initialize experiment 
     experiment = Experiment(
-        dataset=dataset,
+        dataset_config=dataset_config,
         search_strategy_cls=search_strategy_cls,
         search_strategy_params=search_strategy_params,
         search_space=search_space,
         trainer_cfg=trainer_config,
-        transforms= transform,
+        # transforms= transform,
         split_strategy=split_strategy,
         log_base_path=log_dir
     )

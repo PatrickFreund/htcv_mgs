@@ -10,27 +10,34 @@ from datamodule.splitter import SplitStrategy
 from training.trainer import ModelTrainer
 from training.logger import TensorBoardLogger
 from datamodule.dataset import TransformedSubset
+from datamodule.dataset import get_dataset_and_subsets
 from utils.utility import set_seed
 
 
 class ModelEvaluator:
     def __init__(
         self, 
-        dataset: Dataset, 
+        dataset_config: Dict[str, Any],
         trainer: ModelTrainer, 
         trainer_cfg: Dict[str, Any],
         data_splitter: SplitStrategy,
-        transforms: Dict[str, Callable]
+        # transforms: Dict[str, Callable]
     ) -> None:
-        self.dataset = dataset
+        self.dataset = None
+        self.subset_factory = None
+        self.dataset_config = dataset_config
         self.trainer = trainer
         self.log_path: Optional[Path] = None
-        self.transforms = transforms
+        # self.transforms = transforms
         self.trainer_config = trainer_cfg
         self.fold_seeds = trainer_cfg.get("fold_seeds", None)        
 
         self.splitter = data_splitter
         self._check_fold_seeds()
+        self._create_dataset()
+    
+    def _create_dataset(self):
+        self.dataset, self.subset_factory = get_dataset_and_subsets(config=self.dataset_config)
     
     def _check_fold_seeds(self):
         if self.fold_seeds is None:
@@ -55,8 +62,10 @@ class ModelEvaluator:
             set_seed(self.fold_seeds[fold_idx])
             config["used_seed"] = self.fold_seeds[fold_idx]
             
-            train_data = TransformedSubset(self.dataset, train_idx, self.transforms["train"])
-            val_data = TransformedSubset(self.dataset, val_idx, self.transforms["val"])
+            train_data = self.subset_factory(train_idx, train=True)
+            val_data = self.subset_factory(val_idx, train=False)
+            # train_data = TransformedSubset(self.dataset, train_idx, self.transforms["train"])
+            # val_data = TransformedSubset(self.dataset, val_idx, self.transforms["val"])
 
             try:
                 if self.log_path:

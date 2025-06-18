@@ -10,7 +10,7 @@ import torch.nn.functional as F
 from sklearn.metrics import f1_score
 import matplotlib.pyplot as plt
 
-sys.path.append(str(Path(__file__).resolve().parent.parent))
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from datamodule.transforms import get_val_transforms
 from utils.model import get_model
 
@@ -24,8 +24,7 @@ ONESHOT_PATH = PROJECT_ROOT / "explainability" / "LRP-for-ResNet" / "oneshot.py"
 CONFIG_LRP_PATH = PROJECT_ROOT / "explainability" / "LRP-for-ResNet" / "configs" / "MGS_resnet18.json"
 LABEL_CSV = PROJECT_ROOT / "data" / "MGS_data" / "labels" / "labels.csv"
 IMAGE_DIR = PROJECT_ROOT / "data" / "MGS_data" / "data"
-MODEL_PATH = PROJECT_ROOT / "best_model.pth"
-
+MODEL_PATH = PROJECT_ROOT / "notebooks" / "presentation_plots" / "best_model_epoch42_metric0.3991924400840487.pth"
 
 OUTPUT_DIR = PROJECT_ROOT / "explainability" / "results" / "run5"
 sign_modes = ["all", "positive"]
@@ -34,7 +33,7 @@ sign_modes = ["all", "positive"]
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # === COPY MODEL TO RESULT DIR ===
-shutil.copy(MODEL_PATH, OUTPUT_DIR / "best_model.pth")
+# shutil.copy(MODEL_PATH, OUTPUT_DIR / "best_model.pth")
 #shutil.copy(CONFIG_PATH, OUTPUT_DIR / "config.yaml")
 #shutil.copy(TENSORBOARD_LOG_PATH, OUTPUT_DIR / "events.out.tfevents.1749531828.PCPatrick.33924.140")
 

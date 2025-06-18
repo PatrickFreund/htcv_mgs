@@ -10,7 +10,44 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from training.trainer import EarlyStopping
 from training.balancing import BalancingStrategy
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+@dataclass
+class DatasetConfig:
+    """
+    Configuration class for dataset parameters, including paths and transformations.
+
+    Attributes:
+        transforms (Dict[str, Callable]):
+            Dictionary of transformations to apply to the dataset. Keys are transformation names,
+            values are callable transformation functions.
+
+        dataset_type (str):
+            Type of dataset, e.g., "default", "cached", "nobg". This can be used to differentiate
+            between different dataset configurations or preprocessing steps.
+
+        image_dir (str):
+            Directory path where the images are stored. Default is set to a specific path in the project.
+    """
+    transforms: Dict[str, Callable]
+    
+    dataset_type: str = "default" # Type of dataset, e.g., "default", "cached", "nobg"
+    data_dir: str = str(PROJECT_ROOT / "data" / "MGS_data")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Converts the DatasetConfig instance to a dictionary.
+        
+        Returns:
+            Dict[str, Any]: Dictionary representation of the DatasetConfig.
+        """
+        return {
+            "transforms": self.transforms,
+            "dataset_type": self.dataset_type,
+            "data_dir": self.data_dir
+        }
+
+    
 
 @dataclass
 class TrainingConfig:

@@ -43,6 +43,103 @@ class TransformedSubset(Dataset):
             img = self.transform(img)
         return img, label
 
+class TransformedNoBgSubset(Dataset):
+    def __init__(self, base_dataset: Dataset, indices: List[int], transform: transforms, train: bool = True):
+        """
+        Initializes the TransformedNoBgSubset with a base dataset, indices, and a transformation function.
+        Args:
+            base_dataset (Dataset): The original dataset from which this subset is derived.
+            indices (List[int]): List of indices to select from the base dataset.
+            transform (transforms): A transformation function to apply to the images.
+            train (bool):  Train = nutzt NoBG + Maske, Val = nutzt Original
+        """
+        self.base_dataset = base_dataset
+        if not isinstance(self.base_dataset, CachedImageCSVNoBgDataset):
+            raise TypeError("base_dataset must be an instance of CachedImageCSVNoBgDataset")
+        self.indices = indices
+        self.transform = transform
+        self.train = train
+    
+    def __len__(self):
+        """
+        Returns the length of the subset, which is the number of indices.
+        
+        Returns:
+            int: The number of items in the subset.
+        """
+        return len(self.indices)
+    
+    def __getitem__(self, idx: int):
+        bg_img, nobg_img, mask, label = self.base_dataset[self.indices[idx]]
+
+        if self.train:
+            if self.transform:
+                nobg_img = self.transform(nobg_img)
+            return nobg_img, label
+        else:
+            if self.transform:
+                bg_img = self.transform(bg_img)
+            return bg_img, label
+
+
+class CachedImageCSVNoBgDataset(Dataset):
+    def __init__(self, data_dir: Path):
+        self.data_dir = Path(data_dir)
+        self.bg_dir = self.data_dir / "data"
+        self.nobg_img_dir = self.data_dir / "data_nobg"
+        self.mask_dir = self.data_dir / "masks"
+        self.label_path = self.data_dir / "labels" / "labels.csv"
+        self.labels = pd.read_csv(self.label_path)
+        self.delete_missing_images_from_labels()
+        self.data = []  # (bg_image, nobg_image, mask, label) tuples
+
+        print("Caching all images into RAM...")
+        for _, row in self.labels.iterrows():
+            filename = row["filename"]
+            stem = Path(filename).stem
+            label = int(row["label"])
+            try:
+                # Suche nach passenden Dateien mit beliebiger Endung
+                bg_files = list(self.bg_dir.glob(f"{stem}.*"))
+                nobg_files = list(self.nobg_img_dir.glob(f"{stem}.*"))
+                mask_files = list(self.mask_dir.glob(f"{stem}.*"))
+                if not (bg_files and nobg_files and mask_files):
+                    raise FileNotFoundError(f"⚠️ One or more files missing for {stem}")
+                bg_img = Image.open(bg_files[0]).convert("L")
+                nobg_img = Image.open(nobg_files[0]).convert("L")
+                mask_img = Image.open(mask_files[0]).convert("L")
+                self.data.append((bg_img.copy(), nobg_img.copy(), mask_img.copy(), label))
+            except Exception as e:
+                print(f"Failed to load {filename}: {e}")
+
+        print(f"Cached {len(self.data)} image sets into RAM.")
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx: int):
+        return self.data[idx]
+
+    def delete_missing_images_from_labels(self):
+        missing_files = []
+        for index, row in self.labels.iterrows():
+            stem = Path(row["filename"]).stem
+            if not list(self.bg_dir.glob(f"{stem}.*")):
+                print(f"Missing background image for {stem}")
+                missing_files.append(index)
+                continue
+            if not list(self.nobg_img_dir.glob(f"{stem}.*")):
+                print(f"Missing no-background image for {stem}")
+                missing_files.append(index)
+                continue
+            if not list(self.mask_dir.glob(f"{stem}.*")):
+                print(f"Missing mask image for {stem}")
+                missing_files.append(index)
+
+        self.labels.drop(missing_files, inplace=True)
+        self.labels.reset_index(drop=True, inplace=True)
+        if missing_files:
+            print(f"Deleted {len(missing_files)} missing image entries from labels.")
 
 class CachedImageCSVDataset(Dataset):
     def __init__(self, data_dir: Path):
@@ -151,24 +248,60 @@ class ImageCSVDataset(Dataset):
 
 
 
-def get_dataset(data_foldername: str) -> ImageCSVDataset:
+def get_dataset_and_subsets(config: Dict) -> Tuple[Dataset, Callable]:
     """
-    Load dataset corresponding to the specified folder name in the data directory that follows the structure 
-    described in the ImageCSVDataset class.
-
+    Initialisiert das Dataset und gibt eine Funktion zurück, die passende Subsets erzeugt.
+    
     Args:
-        data_foldername (str): Folder name in the data folder
-        
+        config (Dict): Muss Schlüssel enthalten:
+            - "data_dir": str oder Path
+            - "dataset_type": "default", "cached", "nobg"
+            - "transforms": Dict[str, Callable], mit "train" und "val"
+    
     Returns:
-        ImageCSVDataset: Dataset object containing images and labels of the specified folder in data directory.
+        Tuple[Dataset, subset_factory]: 
+            dataset: das vollständige Dataset (Cached oder NoBg)
+            subset_factory: Funktion (indices: List[int], train: bool) -> Dataset-Subset
     """
-    root_dir = Path(__file__).resolve().parent.parent # htcv_mgs directory path
-    data_dir = root_dir / "data" / data_foldername
-    if not data_dir.exists():
-        raise FileNotFoundError(f"Data directory {data_dir} does not exist.")
+    data_dir = Path(config["data_dir"])
+    dataset_type = config.get("dataset_type", "default")  # "default" oder "nobg"
+    transforms = config.get("transforms", {})
 
-    dataset = ImageCSVDataset(data_dir = data_dir) 
-    return dataset
+    if dataset_type == "cached":
+        dataset = CachedImageCSVDataset(data_dir=data_dir)
+
+        def subset_factory(indices: List[int], train: bool) -> Dataset:
+            return TransformedSubset(
+                base_dataset=dataset,
+                indices=indices,
+                transform=transforms["train"] if train else transforms["val"]
+            )
+
+    elif dataset_type == "nobg":
+        dataset = CachedImageCSVNoBgDataset(data_dir=data_dir)
+
+        def subset_factory(indices: List[int], train: bool) -> Dataset:
+            return TransformedNoBgSubset(
+                base_dataset=dataset,
+                indices=indices,
+                transform=transforms["train"] if train else transforms["val"],
+                train=train
+            )
+
+    elif dataset_type == "default":
+        dataset = CachedImageCSVDataset(data_dir=data_dir)
+
+        def subset_factory(indices: List[int], train: bool) -> Dataset:
+            return TransformedSubset(
+                base_dataset=dataset,
+                indices=indices,
+                transform=transforms["train"] if train else transforms["val"]
+            )
+
+    else:
+        raise ValueError(f"Unknown dataset_type: {dataset_type}")
+
+    return dataset, subset_factory
 
 def split_dataset(dataset, save_dir: Path, train_ratio=0.8, seed=42):
     """
@@ -242,3 +375,50 @@ def calculate_pain_status(data_dir: Path):
         df[['index', 'pain_status']].to_csv(output_path, index=False)
         return df[['index', 'pain_status']]
 
+
+if __name__ == "__main__":
+    # Example usage
+    data_dir = Path(__file__).resolve().parent.parent / "data" / "MGS_data_nobg"
+    
+    config = {
+        "data_dir": data_dir,
+        "dataset_type": "nobg",  # or "default"
+        "transforms": {
+            "train": transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5], std=[0.5])
+            ]),
+            "val": transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.5], std=[0.5])
+            ])
+        }
+    }
+    
+    dataset, subset_factory = get_dataset_and_subsets(config)
+    print(f"Dataset length: {len(dataset)}")
+    
+    from splitter import RandomSplit
+    rs = RandomSplit(val_size=0.2, seed=42)
+    train_idx, test_idx = rs.get_splits(dataset)[0]
+    
+    train_subset = subset_factory(train_idx, train=True)
+    test_subset = subset_factory(test_idx, train=False)
+
+    from torch.utils.data import DataLoader
+    import matplotlib.pyplot as plt
+    from PIL import Image
+    train_loader = DataLoader(train_subset, batch_size=2, shuffle=True)
+    
+    for images, labels in train_loader:
+        # Display the first image in the batch
+        img = images[0].squeeze().numpy()
+        plt.imshow(img, cmap='gray')
+        plt.title(f"Label: {labels[0]}")
+        plt.axis('off')
+        plt.show()
+        
+        print(f"Batch images shape: {images[0].size}, Labels: {labels}")
+        break

@@ -15,23 +15,23 @@ from training.evaluator import ModelEvaluator
 class Experiment:
     def __init__(
         self,
-        dataset: Dataset,
+        dataset_config: Dict[str, Any],
         search_strategy_cls: Type[SearchStrategy],
         search_space: Dict[str, List[Any]],
         trainer_cfg: Dict[str, Any],
         split_strategy: SplitStrategy,
-        transforms: Dict[str, Callable],
+        # transforms: Dict[str, Callable],
         search_strategy_params: Dict[str, Any] = {},
         log_base_path: Optional[Union[str, Path]] = None,
     ) -> None:
-        self.dataset = dataset
+        self.dataset_config = dataset_config
         self.search_strategy_cls = search_strategy_cls
         self.search_strategy_params = search_strategy_params
         self.search_space = search_space
         self.trainer_cfg = trainer_cfg
         self.split_strategy = split_strategy
         self.log_base_path = Path(log_base_path).resolve() if log_base_path else None
-        self.transforms = transforms
+        # self.transforms = transforms
 
     def _save_configs(self, search_space: Dict[str, List[Any]], train_cfg: Dict[str, Any]) -> None:
         """
@@ -60,10 +60,10 @@ class Experiment:
 
         # Setup ModelEvaluator
         model_validator = ModelEvaluator(
-            dataset=self.dataset,
+            dataset_config=self.dataset_config,
             trainer=trainer,
             trainer_cfg=self.trainer_cfg,
-            transforms = self.transforms,
+            # transforms = self.transforms,
             data_splitter=self.split_strategy,
         )
 

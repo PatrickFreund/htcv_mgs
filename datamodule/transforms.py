@@ -129,49 +129,6 @@ def apply_rotation_crop(image, angle_range=(0, 7)):
     
     return square_image
 
-class RandomBorderSuppression:
-    def __init__(self, max_cut=50, mode="blur_or_zero"):
-        """
-        max_cut: max Randbreite (in Pixeln) zum Unterdrücken
-        mode: "blur", "zero", "blur_or_zero"
-        """
-        self.max_cut = max_cut
-        self.mode = mode
-        self.chance = 0.5  # Chance to apply the suppression
-
-    def __call__(self, img):
-        if random.random() > self.chance:
-            return img
-        
-        if not isinstance(img, Image.Image):
-            img = F.to_pil_image(img)
-
-        width, height = img.size
-        cut = random.randint(10, self.max_cut)
-
-        mode = self.mode
-        if self.mode == "blur_or_zero":
-            mode = random.choice(["blur", "zero"])
-
-        # print(f"Image size: {width}x{height}x{len(img.getbands())}")
-        # print(f"Applying RandomBorderSuppression with cut: {cut}, mode: {mode}")
-        # Create mask
-        mask = Image.new("L", img.size, 255)
-        draw_area = (cut, cut, width - cut, height - cut)
-        inner_mask = Image.new("L", (width - 2*cut, height - 2*cut), 0)
-        mask.paste(inner_mask, draw_area)
-
-        if mode == "blur":
-            blurred = img.filter(ImageFilter.GaussianBlur(radius=10))
-            img = Image.composite(blurred, img, mask)
-        elif mode == "zero":
-            img_np = np.array(img)
-            mask_np = np.array(mask).astype(bool)
-            img_np[mask_np] = 0
-            img = Image.fromarray(img_np)
-
-        return img
-
 class RotateCrop:
     def __init__(self, angle_range=(0, 7), flip_prob=0.5):
         self.angle_range = angle_range
@@ -201,12 +158,10 @@ def get_train_transforms(
     angle_range=(0, 7), 
     mean=0.5, 
     std=0.5,
-    max_cut = 40
 ):
     return transforms.Compose([
         RotateCrop(angle_range=angle_range, flip_prob=flip_prob),
         transforms.Resize(output_size, interpolation=transforms.InterpolationMode.NEAREST),
-        # RandomBorderSuppression(max_cut=max_cut, mode="blur_or_zero"),
         transforms.ToTensor(),
         transforms.Normalize(mean=[mean], std=[std])
     ])
