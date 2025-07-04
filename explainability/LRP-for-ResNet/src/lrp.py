@@ -93,7 +93,7 @@ class LRPModel(nn.Module):
 
         return layers
 
-    def forward(self, x: torch.tensor, topk=-1) -> torch.tensor:
+    def forward(self, x: torch.tensor, topk=-1, target_class=None) -> torch.tensor:
         """Forward method that first performs standard inference followed by layer-wise relevance propagation.
 
         Args:
@@ -119,7 +119,11 @@ class LRPModel(nn.Module):
 
         # Initial relevance scores are the network's output activations
         relevance = torch.softmax(activations.pop(0), dim=-1)  # Unsupervised
-        if topk != -1:
+        if target_class is not None:
+            relevance_zero = torch.zeros_like(relevance)
+            relevance_zero[..., target_class] = relevance[..., target_class]
+            relevance = relevance_zero
+        elif topk != -1:
             relevance_zero = torch.zeros_like(relevance)
             top_k_indices = torch.topk(relevance, topk).indices
             for index in top_k_indices:
@@ -238,10 +242,10 @@ class LRPModules(nn.Module):
 
 
 def basic_lrp(
-    model, image, rel_pass_ratio=1.0, topk=1, skip_connection_prop: SkipConnectionPropType = "latest"
+    model, image, rel_pass_ratio=1.0, topk=1, skip_connection_prop: SkipConnectionPropType = "latest", target_class=None
 ):
     lrp_model = LRPModel(model, rel_pass_ratio=rel_pass_ratio, skip_connection_prop=skip_connection_prop)
-    R = lrp_model.forward(image, topk)
+    R = lrp_model.forward(image, topk, target_class=target_class)
     return R
 
 

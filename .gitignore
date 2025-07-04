@@ -9,3 +9,5 @@ notebooks/**/raw_data/
 notebooks/**/lrp_data/
 notebooks/**/images/
 notebooks/**/*.csv
+
+all_results/

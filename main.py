@@ -5,7 +5,6 @@ from typing import Dict, Any, Tuple
 import torch
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from datamodule.dataset import ImageCSVDataset, CachedImageCSVDataset
 from datamodule.transforms import get_train_transforms, get_val_transforms
 from utils.model import get_model
 from utils.optimizer import get_optimizer
@@ -16,29 +15,16 @@ from datamodule.splitter import KFoldSplit, RandomSplit, SplitStrategy
 from configs.constants import CLASS_WEIGHTS, DATASET_MEAN, DATASET_STD
 
 def run_grid_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, type[SearchStrategy], Dict[str, Any]]:
-    # 1. Define the search space for hyperparameter tuning 
-    # search_space = GridSearchSpaceConfig(
-    #     batch_size=[32],
-    #     optim=["SGD", "Adam"],
-    #     weight_decay=[1e-4, 1e-3],
-    #     learning_rate=[0.01, 0.001, 0.0001],
-    #     epochs=[200],
-    #     lr_scheduler=["step", "cosine"],
-    #     scheduler_step_size=[5, 30],
-    #     scheduler_gamma=[0.5, 0.1],
-    #     scheduler_t_max=[200],
-    #     momentum=[0.8, 0.9]
-    # ).to_grid_dict()
     search_space = GridSearchSpaceConfig(
         batch_size=[32],
-        optim=["Adam"],
+        optim=["SGD"],
         weight_decay=[0.001],
         learning_rate=[0.001],
         epochs=[200],
         lr_scheduler=["step"],
-        scheduler_step_size=[50],
+        scheduler_step_size=[30],
         scheduler_gamma=[0.5],
-        scheduler_t_max=[200],
+        scheduler_t_max=[0],
         momentum=[0.0]
     ).to_grid_dict()
     
@@ -52,7 +38,7 @@ def run_grid_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, ty
         fold_seeds=fold_seeds,  # seed for each cross-validation fold
         shuffle=True,
         early_stopping=True,
-        patience=20,
+        patience=30,
         main_metric="loss",
         balancing_strategy="weighted_loss",
         class_weights=class_weights,  # darf nicht None sein, wenn balancing_strategy != "no_balancing"
@@ -75,13 +61,14 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
         optim=["Adam", "SGD"],
         weight_decay=ParamRange(type="float", low=1e-5, high=1e-2, log=True),
         learning_rate=ParamRange(type="float", low=1e-5, high=1e-2, log=True),
-        epochs=[100],
-        lr_scheduler=["none", "step", "cosine"],
-        scheduler_step_size= ParamRange(type="int", low=5, high=20, log=False),
+        epochs=[200],
+        lr_scheduler=["none", "cosine", "step"],
+        scheduler_step_size= ParamRange(type="int", low=5, high=50, log=False),
         scheduler_gamma = ParamRange(type="float", low=0.1, high=0.9, log=False),
-        scheduler_t_max=[100],
+        scheduler_t_max=[200],
         momentum= ParamRange(type="float", low=0.5, high=0.9, log=False)
     ).to_dict()
+    
     
     class_weights = {k: 1 / v for k, v in CLASS_WEIGHTS.items()}  # Invert weights for CrossEntropyLoss
     class_weights = {k: v / sum(class_weights.values()) for k, v in class_weights.items()} 
@@ -92,7 +79,7 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
         fold_seeds=fold_seeds,  # seed for each cross-validation fold
         shuffle=True,
         early_stopping=True,
-        patience=15,
+        patience=50,
         main_metric="loss",
         balancing_strategy="weighted_loss",
         class_weights=class_weights,  # darf nicht None sein, wenn balancing_strategy != "no_balancing"
@@ -105,7 +92,7 @@ def run_optuna_search() -> Tuple[Dict[str, Any], Dict[str, Any], SplitStrategy, 
     
     search_strategy_cls = OptunaSearch
     search_strategy_params = {
-        "n_trials": 300, # Number of trials for Optuna
+        "n_trials": 200, # Number of trials for Optuna
         "startup_trials": 20
         # "timeout": 3600,  # Timeout in seconds for the search
     }
@@ -120,15 +107,6 @@ if __name__ == "__main__":
     search_space, trainer_config, split_strategy, search_strategy_cls, search_strategy_params = run_grid_search()
     # search_space, trainer_config, split_strategy, search_strategy_cls, search_strategy_params = run_optuna_search()
     
-    # # 3. Prepare the dataset
-    # data_dir = Path(__file__).resolve().parent / "data" / "MGS_data_nobg"
-    # # dataset = ImageCSVDataset(data_dir = data_dir)
-    # dataset = CachedImageCSVDataset(data_dir = data_dir) # caches the whole dataset in ram to speed up training
-    # transform = {
-    #     "train": get_train_transforms(mean = DATASET_MEAN, std = DATASET_STD, angle_range=(0, 7)), 
-    #     "val": get_val_transforms(mean = DATASET_MEAN, std = DATASET_STD) 
-    # }
-    
     dataset_config = DatasetConfig(
         data_dir = Path(__file__).resolve().parent / "data" / "MGS_data_nobg",
         dataset_type = "nobg", # "default" and "cached" are also available
@@ -139,8 +117,6 @@ if __name__ == "__main__":
     )
     dataset_config = dataset_config.to_dict()
     
-    
-        # 4. Set path for loggin if wished 
     log_dir = Path(__file__).resolve().parent / "results" 
     run_number = len(list(Path.glob(log_dir, "run_*"))) + 1
     log_dir = log_dir / f"run_{run_number}"

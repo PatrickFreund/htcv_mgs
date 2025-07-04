@@ -70,7 +70,7 @@ class TransformedNoBgSubset(Dataset):
         return len(self.indices)
     
     def __getitem__(self, idx: int):
-        bg_img, nobg_img, mask, label = self.base_dataset[self.indices[idx]]
+        bg_img, nobg_img, label = self.base_dataset[self.indices[idx]]
 
         if self.train:
             if self.transform:
@@ -87,11 +87,10 @@ class CachedImageCSVNoBgDataset(Dataset):
         self.data_dir = Path(data_dir)
         self.bg_dir = self.data_dir / "data"
         self.nobg_img_dir = self.data_dir / "data_nobg"
-        self.mask_dir = self.data_dir / "masks"
         self.label_path = self.data_dir / "labels" / "labels.csv"
         self.labels = pd.read_csv(self.label_path)
         self.delete_missing_images_from_labels()
-        self.data = []  # (bg_image, nobg_image, mask, label) tuples
+        self.data = []  # (bg_image, nobg_image, label) tuples
 
         print("Caching all images into RAM...")
         for _, row in self.labels.iterrows():
@@ -102,13 +101,11 @@ class CachedImageCSVNoBgDataset(Dataset):
                 # Suche nach passenden Dateien mit beliebiger Endung
                 bg_files = list(self.bg_dir.glob(f"{stem}.*"))
                 nobg_files = list(self.nobg_img_dir.glob(f"{stem}.*"))
-                mask_files = list(self.mask_dir.glob(f"{stem}.*"))
-                if not (bg_files and nobg_files and mask_files):
+                if not (bg_files and nobg_files):
                     raise FileNotFoundError(f"⚠️ One or more files missing for {stem}")
                 bg_img = Image.open(bg_files[0]).convert("L")
                 nobg_img = Image.open(nobg_files[0]).convert("L")
-                mask_img = Image.open(mask_files[0]).convert("L")
-                self.data.append((bg_img.copy(), nobg_img.copy(), mask_img.copy(), label))
+                self.data.append((bg_img.copy(), nobg_img.copy(), label))
             except Exception as e:
                 print(f"Failed to load {filename}: {e}")
 
@@ -132,9 +129,6 @@ class CachedImageCSVNoBgDataset(Dataset):
                 print(f"Missing no-background image for {stem}")
                 missing_files.append(index)
                 continue
-            if not list(self.mask_dir.glob(f"{stem}.*")):
-                print(f"Missing mask image for {stem}")
-                missing_files.append(index)
 
         self.labels.drop(missing_files, inplace=True)
         self.labels.reset_index(drop=True, inplace=True)
@@ -213,6 +207,7 @@ class ImageCSVDataset(Dataset):
         self.img_dir = Path(data_dir) / "data"
         self.labels = pd.read_csv(Path(data_dir) / "labels" / "labels.csv")
         self.delete_missing_images_from_labels()
+        self.filenames = self.labels["filename"].tolist()
 
     def __len__(self):
         return len(self.labels)

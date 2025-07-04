@@ -1,5 +1,6 @@
 import warnings
 from typing import Literal, Optional, Tuple, Union
+from pathlib import Path
 
 import cv2
 import matplotlib.pyplot as plt
@@ -50,9 +51,15 @@ def save_image_with_attention_map(
     # attention = (attention - attention.min()) / (attention.max() - attention.min())
     if normalize:
         attention = normalize_attr(attention, sign)
+    # print(f"Attention shape: {attention.shape}, Image shape: {image.shape}")
 
     # image : (C, W, H)
-    attention = cv2.resize(attention, dsize=(image.shape[1], image.shape[2]))
+    # attention = cv2.resize(attention, dsize=(image.shape[1], image.shape[2]))
+    # print(f"Attention resized to: {attention.shape}")
+    if attention.shape != (image.shape[1], image.shape[2]):
+        # print(f"Resizing attention from {attention.shape} to {image.shape[1], image.shape[2]}")
+        attention = cv2.resize(attention, dsize=(image.shape[2], image.shape[1]))
+        # print(f"Attention resized to: {attention.shape}")
     image = reverse_normalize(image.copy(), mean, std)
     image = np.transpose(image, (1, 2, 0))
     image = np.clip(image, 0, 1)
@@ -73,8 +80,25 @@ def save_image_with_attention_map(
         plt.savefig(fname, bbox_inches='tight', pad_inches=0)
     else:
         plt.savefig(fname)
+        
 
     plt.clf()
+    plt.close()
+
+    # plot attention map
+    # print("Save attention map, of size", attention.shape)
+    attention_fig, attention_ax = plt.subplots()
+    fname = Path(fname)
+    parent = fname.parent
+    new_parent = parent.with_name(parent.name + "_attention_maps")
+    new_parent.mkdir(exist_ok=True)
+    new_filename = fname.stem + ".jpg"
+    save_path = new_parent / new_filename
+    # print(f"Saving attention map to: {save_path}")
+    attention_grayscale = cv2.cvtColor(attention, cv2.COLOR_GRAY2RGB)  
+    attention_ax.imshow(attention_grayscale, cmap="gray", vmin=attention.min(), vmax=attention.max())
+    attention_ax.axis('off') 
+    attention_fig.savefig(save_path, bbox_inches='tight', pad_inches=0)
     plt.close()
 
 

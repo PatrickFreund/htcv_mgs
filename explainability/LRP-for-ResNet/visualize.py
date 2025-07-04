@@ -88,7 +88,7 @@ def calculate_attention(
         pred_label = tpl.indices[0].item()
         relevance_out = tpl.values[0].item()
         attention: np.ndarray = basic_lrp(
-            model, image, rel_pass_ratio=1.0, topk=1, skip_connection_prop=skip_connection_prop_type
+            model, image, rel_pass_ratio=1.0, topk=1, skip_connection_prop=skip_connection_prop_type, target_class=label.item()
         ).detach().cpu().numpy()
     elif method.lower() == "captumlrp":
         tpl = torch.softmax(model(image), dim=-1).max(dim=-1)

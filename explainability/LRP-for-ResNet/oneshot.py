@@ -127,6 +127,7 @@ def visualize(
 
 
 def main(args: argparse.Namespace) -> None:
+    print("Running oneshot.py with the following arguments:")
     fix_seed(args.seed, args.no_deterministic)
     params = get_parameter_depend_in_data_set(args.dataset)
 
@@ -159,22 +160,58 @@ def main(args: argparse.Namespace) -> None:
     assert model is not None, "Model name is invalid"
 
     model.to(device)
-    visualize(
-        args.image_path,
-        args.label,
-        model,
-        args.method,
-        args.save_path,
-        params,
-        device,
-        attention_dir=args.attention_dir,
-        use_c1c=args.use_c1c,
-        heat_quantization=args.heat_quantization,
-        hq_level=args.hq_level,
-        skip_connection_prop_type=args.skip_connection_prop_type,
-        normalize=args.normalize,
-        sign=args.sign,
-    )
+    if args.image_paths_file and args.labels_file and args.save_paths_file:
+        print("Image paths and labels file provided")
+        print(args.labels_file)
+        
+        with open(args.image_paths_file) as f:
+            image_paths = [line.strip() for line in f]
+
+        with open(args.labels_file) as f:
+            labels = [int(line.strip()) for line in f]
+        
+        with open(args.save_paths_file) as f:
+            save_paths = [line.strip() for line in f]
+
+        print(f"Number of images: {len(image_paths)}")
+        print(f"Number of labels: {len(labels)}")
+        print(f"Number of save paths: {len(save_paths)}")
+        for image_path, label, save_path in zip(image_paths, labels, save_paths):
+            print(f"Visualizing {image_path} with label {label}")
+            visualize(
+                image_path,
+                label,
+                model,
+                args.method,
+                save_path,
+                params,
+                device,
+                attention_dir=args.attention_dir,
+                use_c1c=args.use_c1c,
+                heat_quantization=args.heat_quantization,
+                hq_level=args.hq_level,
+                skip_connection_prop_type=args.skip_connection_prop_type,
+                normalize=args.normalize,
+                sign=args.sign,
+            )
+    else:
+        print("Single")
+        visualize(
+            args.image_path,
+            args.label,
+            model,
+            args.method,
+            args.save_path,
+            params,
+            device,
+            attention_dir=args.attention_dir,
+            use_c1c=args.use_c1c,
+            heat_quantization=args.heat_quantization,
+            hq_level=args.hq_level,
+            skip_connection_prop_type=args.skip_connection_prop_type,
+            normalize=args.normalize,
+            sign=args.sign,
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -219,6 +256,9 @@ def parse_args() -> argparse.Namespace:
     # Target Image
     parser.add_argument("--image-path", type=str, help="path to target image")
     parser.add_argument("--label", type=int, help="label of target image")
+    parser.add_argument("--image-paths-file", type=str)
+    parser.add_argument("--labels-file", type=str)
+    parser.add_argument("--save-paths-file", type=str, help="file to save paths of images")
 
     # Visualize option
     parser.add_argument("--normalize", action="store_true", help="normalize attribution")
