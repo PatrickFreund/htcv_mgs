@@ -1,13 +1,13 @@
 import copy
-import sys
 from pathlib import Path
+import sys
 from typing import Callable, Dict, Any, Optional, Union, Tuple
 
 import torch
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from torch import nn
 from torch.optim.lr_scheduler import _LRScheduler
 from torch.utils.data import DataLoader, Dataset
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from training.balancing import (
@@ -17,6 +17,10 @@ from training.logger import TensorBoardLogger
 
 
 class EarlyStopping:
+    """
+    EarlyStopping is a utility class to stop training when a monitored metric has stopped improving.
+    And to save the best model state when an improvement is detected.
+    """
     def __init__(self, mode: str,  patience: int = 10):
         self.patience = patience
         self.mode = mode
@@ -53,6 +57,11 @@ class EarlyStopping:
         self.best_model_state = None
 
 class ModelTrainer:
+    """
+    ModelTrainer is responsible for training a model using a specified training configuration 
+    and dataset split. It initializes the model and optimizer, sets up the training and validation data loaders,
+    and manages the training loop, including early stopping and logging.
+    """
     def __init__(
         self,
         model_builder: Callable,
@@ -75,6 +84,16 @@ class ModelTrainer:
         self.device = kwargs.get("device", torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     def _resolve_lr_scheduler(self, config: Dict[str, Any], optimizer: torch.optim.Optimizer) -> Optional[_LRScheduler]:
+        """
+        Resolves the learning rate scheduler based on the provided configuration and optimizer.
+
+        Args:
+            config (Dict[str, Any]): Configuration dictionary containing scheduler type and parameters.
+            optimizer (torch.optim.Optimizer): The optimizer for which the scheduler is to be created.
+
+        Returns:
+            Optional[_LRScheduler]: An instance of a learning rate scheduler or None if no scheduler is specified.
+        """
         scheduler_type = config.get("lr_scheduler", "none")
         if scheduler_type == "none":
             return None
@@ -96,6 +115,16 @@ class ModelTrainer:
         strategy: Union[str, BalancingStrategy],
         class_weights: Optional[Dict[int, float]] = None
     ) -> BalancingStrategy:
+        """
+        Resolves the balancing strategy based on the provided string or instance.
+
+        Args:
+            strategy (Union[str, BalancingStrategy]): The balancing strategy to be used, either as a string identifier or an instance of BalancingStrategy.
+            class_weights (Optional[Dict[int, float]], optional): Class weights to be used for balancing. Required if strategy is not "no_balancing". Defaults to None.
+
+        Returns:
+            BalancingStrategy: An instance of the specified balancing strategy.
+        """
         if isinstance(strategy, str):
             if strategy == "no_balancing":
                 return NoBalancingStrategy()
@@ -111,6 +140,17 @@ class ModelTrainer:
             raise TypeError("Balancing strategy must be a string or an instance of BalancingStrategy.")
 
     def _resolve_early_stopping(self, early_stopping: Union[bool, EarlyStopping], mode: str, patience: Optional[int] = None) -> EarlyStopping:
+        """
+        Resolves the early stopping mechanism based on the provided parameters.
+
+        Args:
+            early_stopping (Union[bool, EarlyStopping]): If True, enables early stopping with the specified patience; if an instance of EarlyStopping, uses that instance.
+            mode (str): The mode for early stopping, either "min" or "max", indicating whether to stop training when the monitored metric stops decreasing or increasing.
+            patience (Optional[int], optional): The number of epochs with no improvement after which training will be stopped. If None, it will not apply early stopping. Defaults to None.
+
+        Returns:
+            EarlyStopping: An instance of EarlyStopping configured with the specified parameters.
+        """
         if patience is not None and not isinstance(patience, int):
             raise TypeError("Patience must be an integer if specified.")
         
@@ -121,15 +161,26 @@ class ModelTrainer:
                 return EarlyStopping(patience = patience, mode = mode)
             else:
                 return None
+            
         elif isinstance(early_stopping, EarlyStopping):
             early_stopping.reset()
             early_stopping.mode = mode
             early_stopping.patience = patience if patience is not None else early_stopping.patience
             return early_stopping
+        
         else:
             raise TypeError("Early stopping must be an boolean or an instance of EarlyStopping.")
     
     def _resolve_main_metric(self, main_metric: str) -> Tuple[str, str]:
+        """
+        Resolves the main metric for training and validation, ensuring it is valid and setting the mode accordingly.
+
+        Args:
+            main_metric (str): The main metric to monitor during training. Valid options are "loss", "acc", "f1", "precision", and "recall".
+
+        Returns:
+            Tuple[str, str]: A tuple containing the main metric and the mode ("min" or "max") for monitoring.
+        """
         valid_metrics = ["loss", "acc", "f1", "precision", "recall"]
         if main_metric not in valid_metrics:
             raise ValueError(f"Invalid main metric '{main_metric}' provided. Valid options are: {valid_metrics}")
@@ -140,6 +191,13 @@ class ModelTrainer:
         return main_metric, mode
     
     def _check_class_weights(self, class_weights: Optional[Dict[int, float]], balancing_strategy: Union[str, BalancingStrategy]) -> None:
+        """
+        Checks the validity of class weights based on the balancing strategy and raises appropriate errors if they are not valid.
+
+        Args:
+            class_weights (Optional[Dict[int, float]]): A dictionary mapping class indices (integers) to their corresponding weights (floats).
+            balancing_strategy (Union[str, BalancingStrategy]): The balancing strategy to be used, either as a string identifier or an instance of BalancingStrategy.
+        """
         strategy_name = getattr(balancing_strategy, "name", balancing_strategy)
         if strategy_name == "no_balancing":
             return
@@ -171,6 +229,19 @@ class ModelTrainer:
         criterion,
         scheduler: Optional[_LRScheduler] = None,
     ) -> Dict[str, float]:
+        """
+        Trains the model for one epoch using the provided training data loader, optimizer, and loss criterion.
+
+        Args:
+            model (torch.nn.Module): The model to be trained.
+            train_loader (DataLoader): The data loader for the training dataset.
+            optimizer (torch.optim.Optimizer): The optimizer to update the model parameters.
+            criterion: The loss function to compute the training loss.
+            scheduler (Optional[_LRScheduler], optional): The learning rate scheduler to adjust the learning rate during training. Defaults to None.
+
+        Returns:
+            Dict[str, float]: A dictionary containing the average training loss and various metrics such as accuracy, F1 score, precision, and recall.
+        """
         model.train()
         total_loss = 0.0
         all_preds = []
@@ -208,6 +279,17 @@ class ModelTrainer:
         val_loader: DataLoader,
         criterion
     ) -> Dict[str, float]:
+        """
+        Validates the model for one epoch using the provided validation data loader and loss criterion.
+
+        Args:
+            model (nn.Module): The model to be validated.
+            val_loader (DataLoader): The data loader for the validation dataset.
+            criterion: The loss function to compute the validation loss.
+
+        Returns:
+            Dict[str, float]: A dictionary containing the average validation loss and various metrics such as accuracy, F1 score, precision, and recall.
+        """
         model.eval()
         total_loss = 0.0
         all_preds = []
@@ -256,6 +338,18 @@ class ModelTrainer:
         self.logger = TensorBoardLogger(log_path)
         
     def train(self, config: Dict[str, Any], train_data: Dataset, val_data: Dataset) -> Dict[str, Any]:
+        """
+        Interface for training the model. It initializes the model and optimizer, prepares the data loaders,
+        and runs the training loop for the specified number of epochs. It also handles early stopping and logging.
+
+        Args:
+            config (Dict[str, Any]): Configuration dictionary containing training parameters such as:
+            train_data (Dataset): Dataset for training the model.
+            val_data (Dataset): Dataset for validating the model during training.
+
+        Returns:
+            Dict[str, Any]: A dictionary containing the training history, best epoch, and best validation metrics.
+        """
         model: nn.Module = self.model_builder(config).to(self.device)
         optimizer: torch.optim.Optimizer = self.optimizer_builder(model, config)
         

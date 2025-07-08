@@ -27,6 +27,9 @@ class Logger(ABC):
         pass
 
 class TensorBoardLogger(Logger):
+    """
+    Wrapper for TensorBoard's SummaryWriter to log training metrics, parameters, and model graphs.
+    """
     def __init__(self, log_dir: Union[str, Path]):
         if isinstance(log_dir, str):
             log_dir = Path(log_dir)

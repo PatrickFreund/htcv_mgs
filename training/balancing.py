@@ -49,6 +49,17 @@ class NoBalancingStrategy(BalancingStrategy):
         config: Dict[str, Any],
         device: torch.device
     ) -> Tuple[DataLoader, nn.CrossEntropyLoss]:
+        """
+        Prepares a DataLoader and a CrossEntropyLoss function without any class balancing.
+
+        Args:
+            train_subset (Dataset): The train_subset containing the training data.
+            config (Dict[str, Any]): Configuration dictionary containing parameters like batch size.
+            device (torch.device): The device to which the tensors should be moved (e.g., "cuda" or "cpu").
+
+        Returns:
+            Tuple[DataLoader, nn.CrossEntropyLoss]: _description_
+        """
         pin_memory = True if device == torch.device("cuda") else False
         lossfn = nn.CrossEntropyLoss()
         loader = DataLoader(train_subset, batch_size=config["batch_size"], shuffle=config.get("shuffle", True), pin_memory=pin_memory)
@@ -103,6 +114,17 @@ class OversamplingBalancing(BalancingStrategy):
         config: Dict[str, Any],
         device: torch.device
     ) -> Tuple[DataLoader, nn.CrossEntropyLoss]:
+        """
+        Prepares a DataLoader with oversampling of minority classes and a CrossEntropyLoss function.
+
+        Args:
+            train_subset (Dataset): The train_subset containing the training data.
+            config (Dict[str, Any]): Configuration dictionary containing parameters like batch size.
+            device (torch.device): The device to which the tensors should be moved (e.g., "cuda" or "cpu").
+
+        Returns:
+            Tuple[DataLoader, nn.CrossEntropyLoss]: A DataLoader for the dataset with oversampling and a CrossEntropyLoss function.
+        """
         pin_memory = True if device == torch.device("cuda") else False
         weights: List[float]
         if self.class_weights is None:

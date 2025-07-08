@@ -1,45 +1,60 @@
-import numpy as np
-import sys
 from pathlib import Path
-from typing import Dict, Any, Callable, Tuple, Optional, Union, List
+import sys
+from typing import Dict, Any, Tuple, Optional, Union
 
-from torch.utils.data import Dataset
+import numpy as np
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
+from datamodule.dataset import get_dataset_and_subsets
 from datamodule.splitter import SplitStrategy
 from training.trainer import ModelTrainer
 from training.logger import TensorBoardLogger
-from datamodule.dataset import TransformedSubset
-from datamodule.dataset import get_dataset_and_subsets
 from utils.utility import set_seed
 
 
 class ModelEvaluator:
+    """
+    ModelEvaluator is responsible for evaluating a model using cross-validation.
+    It initializes the dataset with a dataset configuration, a model trainer, and a data splitter strategy.
+    It runs all splits of the dataset and returns the mean and standard deviation of the best validation scores across all folds.
+    
+    Attributes:
+        dataset_config (Dict[str, Any]): Configuration for the dataset.
+        trainer (ModelTrainer): The model trainer instance used for training the model.
+        trainer_config (Dict[str, Any]): Configuration for the model trainer.
+        data_splitter (SplitStrategy): Strategy for splitting the dataset into training and validation sets.
+        fold_seeds (Optional[List[int]]): Seeds for each fold in cross-validation.
+        log_path (Optional[Path]): Path to save logs and results.  
+    """
     def __init__(
         self, 
         dataset_config: Dict[str, Any],
         trainer: ModelTrainer, 
         trainer_cfg: Dict[str, Any],
         data_splitter: SplitStrategy,
-        # transforms: Dict[str, Callable]
     ) -> None:
         self.dataset = None
         self.subset_factory = None
         self.dataset_config = dataset_config
         self.trainer = trainer
         self.log_path: Optional[Path] = None
-        # self.transforms = transforms
         self.trainer_config = trainer_cfg
-        self.fold_seeds = trainer_cfg.get("fold_seeds", None)        
+        self.fold_seeds = trainer_cfg.get("fold_seeds", None) 
 
         self.splitter = data_splitter
         self._check_fold_seeds()
         self._create_dataset()
     
-    def _create_dataset(self):
+    def _create_dataset(self) -> None:
+        """
+        Auxiliary method to create the dataset and subset factory based on the dataset configuration.
+        """
         self.dataset, self.subset_factory = get_dataset_and_subsets(config=self.dataset_config)
     
-    def _check_fold_seeds(self):
+    def _check_fold_seeds(self) -> None:
+        """
+        Checks if the fold seeds are provided, if they are a list of integers, and if their length matches the number of folds in the splitter.
+        """
         if self.fold_seeds is None:
             raise ValueError("Fold seeds must be provided in the trainer configuration.")
         if not isinstance(self.fold_seeds, list):
@@ -48,6 +63,12 @@ class ModelEvaluator:
             raise ValueError(f"Number of fold seeds ({len(self.fold_seeds)}) does not match the number of folds ({self.splitter.k}).")
 
     def set_log_path(self, log_path: Union[str, Path]) -> None:
+        """
+        Sets the log path for saving training logs and results. The log path can be a string or a Path object.
+
+        Args:
+            log_path (Union[str, Path]): Path to the directory where logs will be saved.
+        """
         if not isinstance(log_path, (str, Path)):
             raise TypeError(f"log_path must be a string or a Path object, not {type(log_path)}")
         if isinstance(log_path, str):
@@ -55,6 +76,16 @@ class ModelEvaluator:
         self.log_path = log_path
 
     def run(self, config: Dict[str, Any]) -> Tuple[float, float]:
+        """
+        Runs the evaluation of the model using cross-validation. It trains the model on each fold and 
+        returns the mean and standard deviation of the best validation scores across all folds.
+
+        Args:
+            config (Dict[str, Any]): Configuration dictionary for the model training. It should include parameters like learning rate, batch size, etc.
+
+        Returns:
+            Tuple[float, float]: A tuple containing the mean and standard deviation of the best validation scores across all folds.
+        """
         scores = []
         fold_results = []
         
@@ -64,8 +95,6 @@ class ModelEvaluator:
             
             train_data = self.subset_factory(train_idx, train=True)
             val_data = self.subset_factory(val_idx, train=False)
-            # train_data = TransformedSubset(self.dataset, train_idx, self.transforms["train"])
-            # val_data = TransformedSubset(self.dataset, val_idx, self.transforms["val"])
 
             try:
                 if self.log_path:
@@ -102,11 +131,9 @@ class ModelEvaluator:
             try:
                 hparams_csv_path = self.log_path / "hparams_summary.csv"
                 with open(hparams_csv_path, "w") as f:
-                    # Header
                     headers = list(hparams.keys()) + list(final_metrics.keys())
                     f.write(",".join(headers) + "\n")
 
-                    # Werte
                     values = [str(hparams[k]) for k in hparams] + [f"{final_metrics[k]:.4f}" for k in final_metrics]
                     f.write(",".join(values) + "\n")
             except Exception as e:

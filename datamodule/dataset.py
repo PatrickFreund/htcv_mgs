@@ -305,18 +305,19 @@ class ImageCSVDataset(Dataset):
 
 def get_dataset_and_subsets(config: Dict) -> Tuple[Dataset, Callable]:
     """
-    Initialisiert das Dataset und gibt eine Funktion zurück, die passende Subsets erzeugt.
+    Initializes a dataset based on the provided configuration and returns the dataset along with a
+    subset factory function. The dataset can be of type "default", "cached", or "nobg".
     
     Args:
-        config (Dict): Muss Schlüssel enthalten:
-            - "data_dir": str oder Path
+        config (Dict): 
+            - "data_dir": str or Path
             - "dataset_type": "default", "cached", "nobg"
-            - "transforms": Dict[str, Callable], mit "train" und "val"
+            - "transforms": Dict[str, Callable], with "train" and "val"
     
     Returns:
         Tuple[Dataset, subset_factory]: 
-            dataset: das vollständige Dataset (Cached oder NoBg)
-            subset_factory: Funktion (indices: List[int], train: bool) -> Dataset-Subset
+            dataset: dataset (Cached oder NoBg)
+            subset_factory: function (indices: List[int], train: bool) -> Dataset-Subset
     """
     data_dir = Path(config["data_dir"])
     dataset_type = config.get("dataset_type", "default")  # "default" oder "nobg"
