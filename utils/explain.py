@@ -1,31 +1,35 @@
-import subprocess
-import shutil
-from pathlib import Path
-from typing import Optional, List, Dict, Tuple
-from itertools import chain
-import sys
-import re
-import tempfile
 import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from itertools import chain
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-import matplotlib.pyplot as plt
 
 # ==== Imports from project structure ====
 sys.path.append(str(Path(__file__).resolve().parent.parent))
+from configs.constants import DATASET_MEAN, DATASET_STD
+from datamodule.dataset import ImageCSVDataset
 from datamodule.transforms import get_val_transforms
+from datamodule.splitter import KFoldSplit, RandomSplit
 from utils.model import get_model
 from utils.utility import set_seed
-from configs.constants import DATASET_MEAN, DATASET_STD
-from datamodule.splitter import KFoldSplit, RandomSplit
-from datamodule.dataset import ImageCSVDataset
 
 
 class EvaluationPipeline:
+    """
+    EvaluationPipeline class for running evaluation tasks on a trained model using LRP 
+    (Layer-wise Relevance Propagation) and classification accuracy metrics.
+    """
     def __init__(
         self,
         project_root: Path,
@@ -287,7 +291,7 @@ class EvaluationPipeline:
 
     def _evaluate_lrp_roi(self, strain_id: str, filenames: List[str], output_dir: Optional[Path] = None):
         """
-        Evaluates LRP relevance concentration within ROI masks.
+        Evaluates LRP relevance concentration within ROI / segmentation masks.
 
         Args:
             strain_id (str): ID of the strain for evaluation.
@@ -425,43 +429,3 @@ class EvaluationPipeline:
             Path(save_path_files[sign]).unlink() 
         Path(img_file_path).unlink()
         Path(label_file_path).unlink()
-            
-
-if __name__ == "__main__":
-    for fold in range(3):
-        fold_seed = 42 + fold
-
-        PROJECT_ROOT = Path(__file__).resolve().parent.parent
-        SEARCH_DIR = PROJECT_ROOT / "all_results" / "nobg_paper_run" / "best_combinations_nobg_run_raw" / "config_20250704_164654"
-        IMAGE_DIR = PROJECT_ROOT / "data" / "MGS_data"
-        MODEL_PATH = list((SEARCH_DIR / f"fold_{fold}").glob("*.pth"))[0]
-        CONFIG_PATH = SEARCH_DIR / "config.yaml"
-        TENSORBOARD_LOG_PATH = list((SEARCH_DIR / f"fold_{fold}").glob("events.out.tfevents.*"))[0]
-        OUTPUT_DIR = PROJECT_ROOT / "all_results" / "nobg_paper_run" / "best_run_nobg" / f"fold_{fold}"
-        STRAIN_CSV_PATH = PROJECT_ROOT / "data" / "dataset" / "strains.csv"
-        MASK_PATH = PROJECT_ROOT / "data" / "dataset" / "nobg_manuell_mask"
-        LRP_MASK_PATH = OUTPUT_DIR / "sign_positive_attention_maps"
-
-        print(f"Model path: {MODEL_PATH}")
-        print(f"Config path: {CONFIG_PATH}")
-        print(f"Tensorboard log path: {TENSORBOARD_LOG_PATH}")
-
-        pipeline = EvaluationPipeline(
-            project_root=PROJECT_ROOT,
-            image_dir=IMAGE_DIR,
-            model_path=MODEL_PATH,
-            config_path=CONFIG_PATH,
-            tensorboard_log_path=TENSORBOARD_LOG_PATH,
-            output_dir=OUTPUT_DIR,
-            strain_csv_path=STRAIN_CSV_PATH,
-            masks_path=MASK_PATH,
-            lrp_masks_path=LRP_MASK_PATH,
-            split_strategy="kfold",
-            fold=fold,
-            fold_num=3,
-            seed=42,
-            fold_seed=fold_seed
-        )
-
-        pipeline.evaluate_all(per_strain=True, do_class_eval=True, do_lrp=True, do_lrp_roi_eval=True)
-        pipeline.evaluate_all(per_strain=False, do_class_eval=False, do_lrp=True, do_lrp_roi_eval=True)

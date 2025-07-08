@@ -4,6 +4,20 @@ import torch
 from torch import nn
 
 def get_optimizer(model: nn.Module, config: Dict[str, Any]) -> torch.optim.Optimizer:
+    """
+    Creates an optimizer for the given model based on the configuration provided.
+
+    Args:
+        model (nn.Module): The model for which the optimizer is to be created.
+        config (Dict[str, Any]): Configuration dictionary containing:
+            - "optim": str, name of the optimizer (e.g., "Adam", "SGD")
+            - "learning_rate": float, learning rate for the optimizer
+            - "momentum": float, optional, momentum for SGD (default is 0.9)
+            - "weight_decay": float, weight decay for the optimizer (default is 0.0)
+
+    Returns:
+        torch.optim.Optimizer: An instance of the optimizer specified in the config.
+    """
     optimizer_name = config.get("optim", None)
     learning_rate = config.get("learning_rate", None)
     weight_decay = config.get("weight_decay", None)

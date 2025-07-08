@@ -10,6 +10,18 @@ from torchvision.models import (
 )
 
 def get_model(config: Dict[str, Any]) -> nn.Module:
+    """
+    Creates a model based on the configuration provided. The model can be either ResNet18, ResNet50, or VGG16.
+    
+    Args:
+        config (Dict[str, Any]): Configuration dictionary containing:
+            - "pretrained": bool, whether to use pretrained weights
+            - "num_classes": int, number of output classes
+            - "model_name": str, name of the model to use (e.g., "resnet18", "resnet50", "vgg16")
+
+    Returns:
+        nn.Module: An instance of the specified model with the appropriate number of output classes.
+    """
     pretrained = config.get("pretrained", None)
     num_classes = config.get("num_classes", None)  
     model_name = config.get("model_name", None)
