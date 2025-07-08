@@ -1,18 +1,25 @@
 import sys
-import yaml
-from typing import Any, Dict, List, Callable, Type, Tuple, Optional, Union
 from pathlib import Path
+from typing import Any, Dict, List, Type, Tuple, Optional, Union
 
-from torch.utils.data import Dataset
+import yaml
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-from search.search_strategy import SearchStrategy
 from datamodule.splitter import SplitStrategy
-from training.trainer import ModelTrainer
+from search.search_strategy import SearchStrategy
 from training.evaluator import ModelEvaluator
+from training.trainer import ModelTrainer
+
 
 
 class Experiment:
+    """
+    Encapsulates a complete hyperparameter search experiment, including dataset configuration,
+    search strategy, search space, trainer settings, and data splitting.
+
+    This class provides a unified interface for executing different search strategies (e.g., GridSearch, Optuna),
+    leveraging the abstract SearchStrategy interface for flexibility.
+    """
     def __init__(
         self,
         dataset_config: Dict[str, Any],
@@ -20,7 +27,6 @@ class Experiment:
         search_space: Dict[str, List[Any]],
         trainer_cfg: Dict[str, Any],
         split_strategy: SplitStrategy,
-        # transforms: Dict[str, Callable],
         search_strategy_params: Dict[str, Any] = {},
         log_base_path: Optional[Union[str, Path]] = None,
     ) -> None:
@@ -31,7 +37,6 @@ class Experiment:
         self.trainer_cfg = trainer_cfg
         self.split_strategy = split_strategy
         self.log_base_path = Path(log_base_path).resolve() if log_base_path else None
-        # self.transforms = transforms
 
     def _save_configs(self, search_space: Dict[str, List[Any]], train_cfg: Dict[str, Any]) -> None:
         """
@@ -41,6 +46,9 @@ class Experiment:
             search_space (Dict[str, List[Any]]): The search space dictionary.
             train_cfg (Dict[str, Any]): The training configuration dictionary.
         """
+        if not self.log_base_path:
+            return
+        
         config = {
             "search_space": search_space,
             "trainer_config": train_cfg
@@ -63,7 +71,6 @@ class Experiment:
             dataset_config=self.dataset_config,
             trainer=trainer,
             trainer_cfg=self.trainer_cfg,
-            # transforms = self.transforms,
             data_splitter=self.split_strategy,
         )
 
