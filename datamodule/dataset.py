@@ -1,20 +1,19 @@
-from abc import ABC, abstractmethod
 from typing import Callable, List, Dict, Tuple
-import sys
 
 import pandas as pd
 from pathlib import Path
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-import numpy as np
 from torchvision import transforms
-
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-from utils.utility import set_seed
 
 
 class TransformedSubset(Dataset):
+    """
+    A PyTorch-compatible dataset wrapper that applies image transformations to a subset of samples
+    from a base dataset. This subset is defined by a list of indices and is used during
+    training or validation. The transformation function is applied to the images when they are accessed.   
+    """
     def __init__(self, base_dataset: Dataset, indices: List[int], transform: transforms):
         """
         Initializes the TransformedSubset with a base dataset, indices, and a transformation function.
@@ -29,12 +28,6 @@ class TransformedSubset(Dataset):
         self.transform = transform
     
     def __len__(self):
-        """
-        Returns the length of the subset, which is the number of indices.
-        
-        Returns:
-            int: The number of items in the subset.
-        """
         return len(self.indices)
 
     def __getitem__(self, idx):
@@ -44,6 +37,14 @@ class TransformedSubset(Dataset):
         return img, label
 
 class TransformedNoBgSubset(Dataset):
+    """
+    A PyTorch-compatible dataset wrapper that applies image transformations to a subset of samples
+    from a CachedImageCSVNoBgDataset. This subset is defined by a list of indices and is used during
+    training or validation.
+    During training, the "no-background" version of the image is used. During validation, the original
+    (background) image is used instead. This allows separate augmentation strategies or data views
+    depending on the training phase.
+    """
     def __init__(self, base_dataset: Dataset, indices: List[int], transform: transforms, train: bool = True):
         """
         Initializes the TransformedNoBgSubset with a base dataset, indices, and a transformation function.
@@ -61,12 +62,6 @@ class TransformedNoBgSubset(Dataset):
         self.train = train
     
     def __len__(self):
-        """
-        Returns the length of the subset, which is the number of indices.
-        
-        Returns:
-            int: The number of items in the subset.
-        """
         return len(self.indices)
     
     def __getitem__(self, idx: int):
@@ -81,8 +76,39 @@ class TransformedNoBgSubset(Dataset):
                 bg_img = self.transform(bg_img)
             return bg_img, label
 
-
 class CachedImageCSVNoBgDataset(Dataset):
+    """    
+    CachedImageCSVNoBgDataset is a custom dataset class for loading images, their corresponding binary 
+    segmentation mask (no-background image), and labels from a CSV file, and caching them in memory for 
+    faster access during training increasing efficiency tremendously.
+    It is designed for datasets structured as follows:
+
+    data_dir/
+    ├── data/             # contains image files (e.g., .jpg, .png)
+    │   ├── img1.jpg
+    │   ├── img2.jpg
+    │   └── ...
+    ├── data_nobg/        # contains no-background image files (e.g., .jpg, .png)
+    │   ├── img1.jpg
+    │   ├── img2.jpg
+    |   └── ...
+    └── labels/
+        └── labels.csv    # CSV file with 'filename,label' format
+
+    Example of labels.csv:
+    ----------------------
+    filename,label
+    img1.jpg,0
+    img2.jpg,1
+    img3.jpg,0
+    ...
+
+    Args:
+        data_dir (Path): Path to the dataset directory containing the 'data' and 'labels' folders.
+
+    Returns:
+        A tuple (image, label) for each sample in the dataset.
+    """
     def __init__(self, data_dir: Path):
         self.data_dir = Path(data_dir)
         self.bg_dir = self.data_dir / "data"
@@ -98,7 +124,6 @@ class CachedImageCSVNoBgDataset(Dataset):
             stem = Path(filename).stem
             label = int(row["label"])
             try:
-                # Suche nach passenden Dateien mit beliebiger Endung
                 bg_files = list(self.bg_dir.glob(f"{stem}.*"))
                 nobg_files = list(self.nobg_img_dir.glob(f"{stem}.*"))
                 if not (bg_files and nobg_files):
@@ -118,6 +143,10 @@ class CachedImageCSVNoBgDataset(Dataset):
         return self.data[idx]
 
     def delete_missing_images_from_labels(self):
+        """
+        Auxiliary function that removes entries from the labels DataFrame for which no
+        corresponding image or segmentation mask (no-background image) exists in the directories.
+        """
         missing_files = []
         for index, row in self.labels.iterrows():
             stem = Path(row["filename"]).stem
@@ -136,6 +165,33 @@ class CachedImageCSVNoBgDataset(Dataset):
             print(f"Deleted {len(missing_files)} missing image entries from labels.")
 
 class CachedImageCSVDataset(Dataset):
+    """
+    CachedImageCSVDataset is a custom dataset class for loading images and their corresponding labels from a CSV file
+    and caching them in memory for faster access during training increasing efficiency tremendously.
+    It is designed for datasets structured as follows:
+
+    data_dir/
+    ├── data/             # contains image files (e.g., .jpg, .png)
+    │   ├── img1.jpg
+    │   ├── img2.jpg
+    │   └── ...
+    └── labels/
+        └── labels.csv    # CSV file with 'filename,label' format
+
+    Example of labels.csv:
+    ----------------------
+    filename,label
+    img1.jpg,0
+    img2.jpg,1
+    img3.jpg,0
+    ...
+
+    Args:
+        data_dir (Path): Path to the dataset directory containing the 'data' and 'labels' folders.
+
+    Returns:
+        A tuple (image, label) for each sample in the dataset.
+    """
     def __init__(self, data_dir: Path):
         self.data_dir = data_dir
         self.img_dir = Path(data_dir) / "data"
@@ -164,6 +220,10 @@ class CachedImageCSVDataset(Dataset):
         return self.data[idx]
 
     def delete_missing_images_from_labels(self):
+        """
+        Auxiliary function that removes entries from the labels DataFrame for which no
+        corresponding image file exists in the image directory.
+        """
         missing_files = []
         for index, row in self.labels.iterrows():
             img_stem = row["filename"].split(".")[0]
@@ -172,7 +232,7 @@ class CachedImageCSVDataset(Dataset):
         self.labels.drop(missing_files, inplace=True)
         self.labels.reset_index(drop=True, inplace=True)
         if missing_files:
-            print(f"⚠️ Deleted {len(missing_files)} missing image entries from labels.")
+            print(f"Deleted {len(missing_files)} missing image entries from labels.")
 
 class ImageCSVDataset(Dataset):
     """
@@ -196,8 +256,7 @@ class ImageCSVDataset(Dataset):
     ...
 
     Args:
-        data_dir (Path): Path to the dataset split directory (e.g., 'train', 'test').
-        transform (torchvision.transforms, optional): Transformations to apply to the images.
+        data_dir (Path): Path to the dataset directory containing the 'data' and 'labels' folders.
 
     Returns:
         A tuple (image, label) for each sample in the dataset.
@@ -223,11 +282,15 @@ class ImageCSVDataset(Dataset):
             raise FileNotFoundError(f"No image found for {img_name} in {self.img_dir}.")
         
         img_path = possible_files[0]
-        img = Image.open(img_path).convert("L")  # Grayscale
+        img = Image.open(img_path).convert("L")
 
         return img, label
 
     def delete_missing_images_from_labels(self):
+        """
+        Auxiliary functions that removes entries from the labels DataFrame for which no 
+        corresponding image file exists in the image directory. 
+        """
         missing_files = []
         for index, row in self.labels.iterrows():
             img_name = row["filename"]
@@ -239,9 +302,6 @@ class ImageCSVDataset(Dataset):
         self.labels.drop(missing_files, inplace=True)
         self.labels.reset_index(drop=True, inplace=True)
         print(f"Deleted {len(missing_files)} missing images from labels.")
-
-
-
 
 def get_dataset_and_subsets(config: Dict) -> Tuple[Dataset, Callable]:
     """
@@ -284,7 +344,7 @@ def get_dataset_and_subsets(config: Dict) -> Tuple[Dataset, Callable]:
             )
 
     elif dataset_type == "default":
-        dataset = CachedImageCSVDataset(data_dir=data_dir)
+        dataset = ImageCSVDataset(data_dir=data_dir)
 
         def subset_factory(indices: List[int], train: bool) -> Dataset:
             return TransformedSubset(
@@ -327,93 +387,3 @@ def split_dataset(dataset, save_dir: Path, train_ratio=0.8, seed=42):
 
     print(f"Saved train_labels.csv and test_labels.csv to {save_dir}")
     return train_subset, test_subset
-
-def calculate_pain_status(data_dir: Path):
-        img_dir = Path(data_dir) / "data" # Assuming images are in a subfolder named 'data'
-        mgs = pd.read_csv(Path(data_dir) / "labels" / "v3_mgs_01.csv")
-        labels = pd.read_csv(Path(data_dir) / "labels" / "labels.csv") # Assuming labels are in a subfolder named 'labels'
-        df = mgs.copy()
-        index_col = df['index'].copy()
-
-        for col in df.columns:
-            if col != 'index':
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        df.replace(9, np.nan, inplace = True)
-        df['index'] = index_col
-
-        fau_types = ['ot', 'nb', 'cb', 'ep', 'wc']
-        reviewer_indices = range(1, 13)
-        result = []
-
-        for idx, row in df.iterrows():
-            reviewer_avgs = []
-
-            for i in reviewer_indices:
-                reviewer_scores = [row.get(f"{fau}{i}", np.nan) for fau in fau_types]
-                valid_scores = [s for s in reviewer_scores if pd.notna(s)]
-
-                if pd.notna(row.get(f'ot{i}', np.nan)) and len(valid_scores) >= 3:
-                    reviewer_avgs.append(np.nanmean(valid_scores))
-
-            if not reviewer_avgs:
-                result.append("no data")
-            else:
-                total_avg = np.mean(reviewer_avgs)
-                result.append(1 if total_avg >= 0.6 else 0)
-
-        df['pain_status'] = result
-
-        df = df[df['pain_status'] != 'no data']
-
-        output_path = Path(data_dir) / "labels" / "pain_nopain.csv"
-        df[['index', 'pain_status']].to_csv(output_path, index=False)
-        return df[['index', 'pain_status']]
-
-
-if __name__ == "__main__":
-    # Example usage
-    data_dir = Path(__file__).resolve().parent.parent / "data" / "MGS_data_nobg"
-    
-    config = {
-        "data_dir": data_dir,
-        "dataset_type": "nobg",  # or "default"
-        "transforms": {
-            "train": transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5], std=[0.5])
-            ]),
-            "val": transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.5], std=[0.5])
-            ])
-        }
-    }
-    
-    dataset, subset_factory = get_dataset_and_subsets(config)
-    print(f"Dataset length: {len(dataset)}")
-    
-    from splitter import RandomSplit
-    rs = RandomSplit(val_size=0.2, seed=42)
-    train_idx, test_idx = rs.get_splits(dataset)[0]
-    
-    train_subset = subset_factory(train_idx, train=True)
-    test_subset = subset_factory(test_idx, train=False)
-
-    from torch.utils.data import DataLoader
-    import matplotlib.pyplot as plt
-    from PIL import Image
-    train_loader = DataLoader(train_subset, batch_size=2, shuffle=True)
-    
-    for images, labels in train_loader:
-        # Display the first image in the batch
-        img = images[0].squeeze().numpy()
-        plt.imshow(img, cmap='gray')
-        plt.title(f"Label: {labels[0]}")
-        plt.axis('off')
-        plt.show()
-        
-        print(f"Batch images shape: {images[0].size}, Labels: {labels}")
-        break

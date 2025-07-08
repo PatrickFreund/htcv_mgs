@@ -8,14 +8,15 @@ Functions:
 - load_dataset_stats(...)    : loads stats from a JSON file
 """
 
+import json
+import math
 import os
 import random
+
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image
 from torchvision import transforms
-import torchvision.transforms.functional as F
-import math
-import json
+
 
 # ------------------------------------------------------------------
 # Augmentation Utility Functions
@@ -158,7 +159,20 @@ def get_train_transforms(
     angle_range=(0, 7), 
     mean=0.5, 
     std=0.5,
-):
+) -> transforms.Compose:
+    """
+    Get a custom transform function for training.
+
+    Args:
+        output_size (tuple, optional): output size of the image after resizing. Defaults to (224, 224).
+        flip_prob (float, optional): probability of flipping the image horizontally. Defaults to 0.5.
+        angle_range (tuple, optional): range of angles for random rotation crops. Defaults to (0, 7).
+        mean (float, optional): _description_. pixelwise mean for normalization. Defaults to 0.5.
+        std (float, optional): _description_. pixelwise standard deviation for normalization. Defaults to 0.5.
+
+    Returns:
+        transforms.Compose: A composed transform function that applies rotation, cropping, resizing, normalization.
+    """
     return transforms.Compose([
         RotateCrop(angle_range=angle_range, flip_prob=flip_prob),
         transforms.Resize(output_size, interpolation=transforms.InterpolationMode.NEAREST),
@@ -168,7 +182,7 @@ def get_train_transforms(
 
 def get_val_transforms(output_size=(224, 224), mean=0.5, std=0.5):
     """
-    Get a custom transform function for validation. Preprossesing only.
+    Get a custom transform function for validation.
     """
     return transforms.Compose([
         CenterCrop(),
@@ -185,21 +199,17 @@ def compute_dataset_stats(image_folder):
     """
     Compute mean and standard deviation of a dataset of grayscale images.
     """
-    # Initialize variables to accumulate pixel values
     pixel_sum = 0.0
     pixel_squared_sum = 0.0
     num_pixels = 0
     
-    # Process each image in the folder
     for filename in os.listdir(image_folder):
         if filename.endswith(('.png', '.jpg', '.jpeg', '.JPG', '.JPEG', '.PNG')):
             img_path = os.path.join(image_folder, filename)
             try:
-                # Open image and convert to numpy array
-                image = Image.open(img_path)
-                image_array = np.array(image).astype(np.float32) / 255.0  # Normalize to [0,1]
+                image = Image.open(img_path).convert("L")  
+                image_array = np.array(image).astype(np.float32) / 255.0
                 
-                # Accumulate statistics
                 pixel_sum += np.sum(image_array)
                 pixel_squared_sum += np.sum(image_array ** 2)
                 num_pixels += image_array.size
@@ -231,31 +241,3 @@ def load_dataset_stats(stats_path='data/dataset_stats.json'):
         stats = json.load(f)
     return stats['mean'], stats['std']
 
-if __name__ == "__main__":
-    from pathlib import Path
-    image_path = Path(r"C:\Users\Freun\Desktop\htcv_mgs\data\MGS_data\data")
-    image_paths = list(image_path.glob("*.JPG"))
-    
-    transformed_images = []
-    for i in range(200):
-        image = Image.open(image_paths[i]).convert("L")
-        center_crop = CenterCrop()
-        random_border_suppression = RandomBorderSuppression(max_cut=40, mode="blur_or_zero")
-        rotate_crop = RotateCrop(angle_range=(0, 15), flip_prob=0.5)
-        resize = transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.NEAREST)
-        
-        transform = transforms.Compose([
-            rotate_crop,
-            resize,
-            random_border_suppression,
-        ])
-        transformed_image = transform(image)
-        transformed_images.append(transformed_image)
-    
-    import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(10, 20, figsize=(20, 10))
-    for i, ax in enumerate(axes.flat):
-        ax.imshow(transformed_images[i], cmap='gray')
-        ax.axis('off')
-    plt.tight_layout()
-    plt.show()
