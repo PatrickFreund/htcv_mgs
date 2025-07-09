@@ -1,125 +1,119 @@
-# Hot Topic Computer Vision - Mouse Grimace Scale
-This repository provides a modular training pipeline for Convolutional Neural Networks (CNNs) using PyTorch. The setup is designed for **image classification** tasks with CSV-labeled datasets.
+# HTCV - Fully Supervised MGS (Mouse Grimace Scale)
+This repository provides a modular and configurable training and evaluation pipeline for image classification using Convolutional Neural Networks (CNNs) in PyTorch.
+While originally developed for pain classification based on the Mouse Grimace Scale (MGS) using ResNet18, the pipeline is easily adaptable to other grayscale image classification tasks.
+
+The pipeline supports:
+- Configurable model training
+- Grid search and Optuna-based hyperparameter optimization
+- Explainability via LRP (Layer-wise Relevance Propagation)
+- Group-wise evaluation (e.g., per strain or subject)
+
+
 
 ## Directory Structure 
 
-### 📂 Data
-The `data/` folder contains the datasets used for training and testing. The training pipeline supports **two options** possible structures of the `data/` folder in order to load the dataset correctly:
+```
+htcv_mgs/
+
+├── configs/                     # Static configs and constants
+├── datamodule/                  # Datasets, transforms, splits
+├── training/                    # Trainer, evaluator, balancing, logging
+├── search/                      # GridSearch and Optuna search logic
+├── utils/                       # Model and optimizer builders, helpers
+├── explainability/              # LRP module (external integration)
+├── results/                     # Training logs, metrics, model checkpoints
+├── data/                        # Input datasets and label files
+|
+├── requirements-cpu.txt         # CPU requirements for the repository
+├── requirements-gpu.txt         # GPU requirements for the repository
+├── GridSearchDemo.ipynb         # Example notebook for grid search
+└── OptunaSearchDemo.ipynb       # Example notebook for Optuna hyperparameter optimization
+```
 
 
-#### 1️⃣ Single Folder (Automatic Split)
+## Getting Started 
 
-If your dataset is **not pre-split** into training and testing sets, simply provide the dataset folder:
+### Installation 
+Set up a virtual environment and install the required packages:
 
 ```bash
---data_folder_train your_dataset_folder
+python -m venv venv
+source venv/bin/activate  # On Windows use `venv\Scripts\activate`
+
+# Then isntall the requirements
+pip install -r requirements-cpu.txt  # For CPU-only usage
+# or
+pip install -r requirements-gpu.txt  # For GPU usage
 ```
 
-The dataset will be **automatically split** into **80% Training** and **20% Testing** data. The data used for training and testing is stored into `train_labels.csv` and `test_labels.csv` in the `models/[model_name]_[run]/` directory so that later on the test data can be used for further exploration of the model performance.
+### Example Usage
+Instead of a monolithic CLI script, usage is demonstrated through Jupyter notebooks:
+Notebook | Description
+--- | ---
+notebooks/TrainDemo.ipynb | Run a training session with a ResNet18 model on MGS data
+notebooks/ExplainabilityDemo.ipynb | Run explainability analysis using LRP on trained models
+<br>
+Each notebook walks through:
+1. Definition of the hyperparameter search space
+2. Configuration of training specifics (e.g., balancing, early stopping, etc.)
+3. Preparation of the split strategy for the dataset
+4. Preparation of the dataset and transforms 
+5. Execution of the hyperparameter search 
+6. Evaluation of the best model via
+    - Group-wise evaluation
+    - Explainability analysis (LRP)
+    - ...
 
-**Example folder structure:**
-```
-data/
-├── dataset/
-│   ├── data/               # contains image files (e.g., .jpg, .png)
-│   │   ├── img0.jpg
-│   │   ├── img1.png
-│   │   └── ...            # more images
-│   └── labels/
-│       └── labels.csv      # CSV file in 'filename,label' format
-```
 
-**Example `labels.csv`:**
+## Data structure
+Detailed information about the data structure can be found in the demo notebooks or in datamodule/dataset.py however generally the data structure is as follows:
 
-| filename   | label |
-|------------|-------|
-| img0.jpg   | 0     |
-| img1.png   | 1     |
-| ...        | ...   |
-
----
-
-#### 2️⃣ Pre-split Dataset (Separate Train and Test Folders)
-
-If your dataset is **already split** into separate training and testing folders, use:
-
-```bash
---data_folder_train train_folder --data_folder_test test_folder
-```
-
-In this case, the pipeline will load **both datasets independently** and **no automatic splitting** will be applied.
-
-**Example folder structure:**
 ```
 data/
-└── dataset/
-    ├── train/
-    │   ├── data/               # training images
-    │   │   ├── img0.jpg
-    │   │   ├── img1.png
-    │   │   └── ...
-    │   └── labels/
-    │       └── labels.csv      # 'filename,label' format
-    └── test/
-        ├── data/               # testing images
-        │   ├── img100.jpg
-        │   ├── img101.png
-        │   └── ...
-        └── labels/
-            └── labels.csv      # 'filename,label' format
+└── dataset_name/
+    ├── data/                    # grayscale image files (e.g. .jpg)
+    └── labels/
+        └── labels.csv           # must contain: filename,label
 ```
 
----
-
-> **Note:**  
-> - The argument `--data_folder_train` is **always required**  
-> - The argument `--data_folder_test` is **optional** if omitted, the training dataset will be automatically split (80/20).
-
----
-
-### 📂 Explainability *(to be implemented)*
-This folder will contain scripts for **model explainability and interpretability**:
-- Layer-wise Relevance Propagation (LRP)
-
----
-### 📂 Models
-All trained model checkpoints are saved here. Checkpoints are organized by model name and run ID:
-
+Example labels.csv:
 ```
-models/
-├── resnet18_0/                         
-│   ├── checkpoint_0_resnet18_best.pth  # First best checkpoint (e.g., after epoch 2)
-│   └── checkpoint_1_resnet18_best.pth  # Later found better checkpoint (e.g., after epoch 5)
-├── resnet18_1/                         
-│   └── checkpoint_0_resnet18_best.pth  # First best checkpoint (no later improvement)
-├── resnet18_2/
-│   ├── checkpoint_0_resnet18_best.pth  # First best checkpoint
-│   ├── checkpoint_1_resnet18_best.pth  # Improved checkpoint
-│   └── checkpoint_2_resnet18_best.pth  # Further improved checkpoint
-└── ...                                 # Further training runs
+filename,label
+img1.jpg,0
+img2.jpg,1
+img3.jpg,0
+img4.jpg,1
+``` 
+
+Presplitting is not possible, since the pipeline will handle it automatically. The dataset will be split into training and validation sets based on the provided split strategy (e.g., KFold, RandomSplit) and the defined number of splits.
+
+
+## Results & Logs
+All training runs are saved in:
 ```
-
----
-
-### Notebooks *(to be implemented)*
-This folder is planned for **Jupyter notebooks** to:
-- Visualize training results (accuracy/loss curves)
-- Plot confusion matrices
-- Analyze explainability outputs
-
----
-
-### Training
-Contains the main training script `train.py`, which handles:
-- Dataset loading
-- Model initialization
-- Training and validation loops
-- Checkpoint saving
-
-
-## Example Usage
-Go into the root directory `htcv_mgs/` and execute the following command:
-
+results/
+└── experiment_name/
+    ├─ run_name/
+    |    ├── fold_0/
+    |    │   ├── best_model.pth
+    |    │   └── events.out.tfevents...
+    |    ├── fold_1/
+    |    │   ├── best_model.pth
+    |    │   └── events.out.tfevents...
+    |    ├── fold_2/
+    |    │   ├── best_model.pth
+    |    │   └── events.out.tfevents...
+    |    ├── config.yaml
+    |    └── hparams_summary.csv
+    |
+    └── config.yaml
 ```
-python train.py --epochs 50 --batch_size 32 --model resnet18 --device cuda --data_folder [foldername_in_data_dir] --pretrained --shuffle
-```
+The `best_model.pth` files contain the best model weights for each fold, while the `events.out.tfevents...` files contain TensorBoard logs for visualization of training metrics. The `config.yaml` file contains the configuration used in the run, and `hparams_summary.csv` contains a summary of hyperparameters and their corresponding performance metrics. The `config.yaml` on the top level contains the overall search space and training configuration used for the experiment.
+
+
+## Explainability
+Integrated Layer-wise Relevance Propagation (LRP) for resnet18 with grayscale inputs.
+Current limitations:
+- Only resnet18 supported (due to external LRP structure)
+- Only grayscale images (single channel)
+- Requires ROI /segmentation masks for relevance-in-ROI analysis

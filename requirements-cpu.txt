@@ -1,6 +1,6 @@
 tqdm>=4.65.0
 matplotlib>=3.7.1
-numpy<2
+numpy>=1.24.3
 opencv-python>=4.7.0.72
 pillow>=9.5.0
 scikit-image>=0.20.0
@@ -18,7 +18,7 @@ ipykernel
 optuna
 requests
 
---extra-index-url https://download.pytorch.org/whl/cu118
-torch==2.2.0+cu118
-torchvision==0.17.0+cu118
-torchaudio==2.2.0+cu118
+# CPU-Version von PyTorch (automatisch vom PyPI geladen, keine CUDA)
+torch
+torchvision
+torchaudio
