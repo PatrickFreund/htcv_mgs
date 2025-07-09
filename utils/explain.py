@@ -185,17 +185,22 @@ class EvaluationPipeline:
             do_lrp (bool): Whether to generate LRP maps.
             do_lrp_roi_eval (bool): Whether to perform LRP ROI-based evaluation.
         """
-        if do_lrp_roi_eval:
-            do_lrp = True
+        if self.device == "cuda":
+            if do_lrp_roi_eval:
+                do_lrp = True
 
-        if do_lrp:
-            existing_dirs = self._lrp_already_generated(self.sign_modes)
-            if all(existing_dirs.values()):
-                print("LRP results already generated for all sign modes, skipping LRP evaluation.")
-            else:
-                sign_modes_to_run = [sign for sign in self.sign_modes if not existing_dirs.get(sign, False)]
-                self._run_lrp_explainability(sign_modes=sign_modes_to_run)
-
+            if do_lrp:
+                existing_dirs = self._lrp_already_generated(self.sign_modes)
+                if all(existing_dirs.values()):
+                    print("LRP results already generated for all sign modes, skipping LRP evaluation.")
+                else:
+                    sign_modes_to_run = [sign for sign in self.sign_modes if not existing_dirs.get(sign, False)]
+                    self._run_lrp_explainability(sign_modes=sign_modes_to_run)
+        else:
+            print("Skipping LRP evaluation on CPU, as it requires GPU support.")
+            do_lrp = False
+            do_lrp_roi_eval = False
+        
         if per_strain:
             if self.strain_csv_path is None:
                 raise ValueError("strain_csv_path is required for per-strain evaluation")
