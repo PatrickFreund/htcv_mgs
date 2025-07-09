@@ -117,3 +117,4 @@ Current limitations:
 - Only resnet18 supported (due to external LRP structure)
 - Only grayscale images (single channel)
 - Requires ROI /segmentation masks for relevance-in-ROI analysis
+- CUDA device for LRP analysis
