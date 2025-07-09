@@ -4,6 +4,7 @@ from pathlib import Path
 
 import json
 import numpy as np
+import pandas as pd
 import torch
 
 def set_seed(seed: int):
@@ -24,6 +25,57 @@ def set_seed(seed: int):
     torch.backends.cudnn.benchmark = False
     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
     torch.use_deterministic_algorithms(True, warn_only=True)
+
+def process_and_summarize_results(
+    results_dir: Path,
+    output_csv_name: str = "combined_results.csv",
+    metrics: list = ['loss', 'acc', 'f1', 'precision', 'recall'],
+    show_markdown: bool = True
+) -> str:
+    """
+    Loads all .csv result files from a given directory, merges them into one DataFrame,
+    formats metrics as 'mean ± std', and returns a markdown table string.
+
+    Args:
+        results_dir (Path): Directory containing the CSV result files.
+        output_csv_name (str): Name of the combined output file to save.
+        metrics (list): List of metric names to format.
+        show_markdown (bool): Whether to print the markdown table.
+
+    Returns:
+        str: Markdown-formatted summary table.
+    """
+    # Load and merge all CSV files
+    csv_files = list(results_dir.rglob("*.csv"))
+    df_list = [pd.read_csv(file) for file in csv_files]
+    df = pd.concat(df_list, ignore_index=True)
+
+    raw_combined_path = results_dir / f"{output_csv_name.replace('.csv', '_raw.csv')}"
+    df.to_csv(raw_combined_path, index=False)
+
+    for metric in metrics:
+        mean_col = f'mean_{metric}'
+        std_col = f'std_{metric}'
+        if mean_col in df.columns and std_col in df.columns:
+            df[metric] = df[mean_col].round(4).astype(str) + ' ± ' + df[std_col].round(4).astype(str)
+    drop_cols = [f'mean_{m}' for m in metrics] + [f'std_{m}' for m in metrics]
+    df.drop(columns=[c for c in drop_cols if c in df.columns], inplace=True)
+
+    columns_to_keep = [
+        'batch_size', 'epochs', 'learning_rate', 'lr_scheduler',
+        'scheduler_step_size', 'scheduler_gamma', 'scheduler_t_max',
+        'weight_decay', 'model_name', 'optim', 'momentum', 'pretrained'
+    ] + metrics
+
+    df_short = df[[col for col in columns_to_keep if col in df.columns]]
+    final_output_path = results_dir / output_csv_name
+    df_short.to_csv(final_output_path, index=False)
+
+    markdown_table = df_short.to_markdown(index=False)
+    if show_markdown:
+        print(markdown_table)
+
+    return markdown_table
 
 def get_unique_path(base_path: Path) -> Path:
     """
