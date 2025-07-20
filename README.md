@@ -50,10 +50,11 @@ pip install -r requirements-gpu.txt  # For GPU usage
 Instead of a monolithic CLI script, usage is demonstrated through Jupyter notebooks:
 Notebook | Description
 --- | ---
-notebooks/TrainDemo.ipynb | Run a training session with a ResNet18 model on MGS data
-notebooks/ExplainabilityDemo.ipynb | Run explainability analysis using LRP on trained models
+GridsearchDemo.ipynb | Run experiments on the MGS dataset with gridsearch hyperparameter optimization
+OptunaSearchDemo.ipynb | Run experiments on the MGS dataset with bayesian search hyperparameter optimization
 <br>
 Each notebook walks through:
+
 1. Definition of the hyperparameter search space
 2. Configuration of training specifics (e.g., balancing, early stopping, etc.)
 3. Preparation of the split strategy for the dataset
