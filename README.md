@@ -86,7 +86,8 @@ img3.jpg,0
 img4.jpg,1
 ``` 
 
-Presplitting is not possible, since the pipeline will handle it automatically. The dataset will be split into training and validation sets based on the provided split strategy (e.g., KFold, RandomSplit) and the defined number of splits.
+Presplitting is not possible, since the pipeline will handle it automatically. The dataset will be split into training and validation sets based on the provided split strategy (e.g., KFold, RandomSplit) and the defined number of splits. 
+When the standard MGS dataset should be used than put the 3406 images into data/MGS_data/data/*.jpg and run the default settings.
 
 
 ## Results & Logs
