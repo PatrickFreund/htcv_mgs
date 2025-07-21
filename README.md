@@ -8,7 +8,8 @@ The pipeline supports:
 - Explainability via LRP (Layer-wise Relevance Propagation)
 - Group-wise evaluation (e.g., per strain or subject)
 
-
+To reproduce the experiments described in the report, please move the images listed in `data/MGS_data/labels/labels.csv` to the corresponding directory `data/MGS_data/data/`. Make sure to convert all images to grayscale beforehand, as the entire pipeline assumes **grayscale input data**.<br>
+Due to size limitations, the mouse segmentation masks and removed background images required for the background removal experiments (ablation study) could not be uploaded to GitHub. As a result, these specific experiments cannot be reproduced unless you contact us directly to request the data.
 
 ## Directory Structure 
 
@@ -87,7 +88,6 @@ img4.jpg,1
 ``` 
 
 Presplitting is not possible, since the pipeline will handle it automatically. The dataset will be split into training and validation sets based on the provided split strategy (e.g., KFold, RandomSplit) and the defined number of splits. 
-When the standard MGS dataset should be used than put the 3406 images into data/MGS_data/data/*.jpg and run the default settings.
 
 
 ## Results & Logs
